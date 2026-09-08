@@ -1,0 +1,86 @@
+{
+  "checked_at": "2026-09-08T17:41:32+00:00",
+  "scope": "Document structure and local link targets; no full remote-link or ACP conformance audit",
+  "wiki_markdown_files": 25,
+  "wiki_concept_documents": 22,
+  "course_markdown_files": 4,
+  "new_markdown_files": 10,
+  "local_links_checked": 82,
+  "new_json_examples_parsed": 8,
+  "document_errors": [],
+  "handshake_example_compiled": true,
+  "handshake_actual_probes": [
+    {
+      "requested_version": 1,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": false,
+            "promptCapabilities": {
+              "image": false,
+              "audio": false,
+              "embeddedContext": false
+            },
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "sessionCapabilities": {},
+            "auth": {}
+          },
+          "authMethods": []
+        }
+      },
+      "exit_code": 0,
+      "stderr": ""
+    },
+    {
+      "requested_version": 2,
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "protocolVersion": 1,
+          "agentCapabilities": {
+            "loadSession": false,
+            "promptCapabilities": {
+              "image": false,
+              "audio": false,
+              "embeddedContext": false
+            },
+            "mcpCapabilities": {
+              "http": false,
+              "sse": false
+            },
+            "sessionCapabilities": {},
+            "auth": {}
+          },
+          "authMethods": []
+        }
+      },
+      "exit_code": 0,
+      "stderr": ""
+    }
+  ],
+  "existing_repo_check": "passed",
+  "existing_repo_tests": {
+    "passed": true,
+    "tests_discovered": 0
+  },
+  "zed_interoperability": "not tested",
+  "new_files": [
+    "/Users/peter/knowledge-bundles/harness-engineering/concepts/acp-mental-model.md",
+    "/Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md",
+    "/Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md",
+    "/Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md",
+    "/Users/peter/knowledge-bundles/harness-engineering/workflows/acp-learning.md",
+    "/Users/peter/knowledge-bundles/harness-engineering/references/acp-wiki-viewing.md",
+    "/Users/peter/repos/codecrafters-claude-code-rust/guides/acp/README.md",
+    "/Users/peter/repos/codecrafters-claude-code-rust/guides/acp/00-inspect.md",
+    "/Users/peter/repos/codecrafters-claude-code-rust/guides/acp/01-handshake.md",
+    "/Users/peter/repos/codecrafters-claude-code-rust/guides/acp/progress.md"
+  ]
+}

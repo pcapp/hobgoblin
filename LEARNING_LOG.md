@@ -229,6 +229,15 @@ The original one-liner didn't bind because it wasn't specific.
 
 ---
 
+## ACP learning track
+
+**2026-09-08 — course setup, not mastery evidence.** Target: expose this agent to Zed over local stdio using Agent Client Protocol (ACP). Keep the existing CLI. Peter writes the Rust; Hermes provides explanations, bounded exercises, and verification.
+
+- [Project course](guides/acp/README.md): API-focused lessons and source-specific integration seams.
+- [Progress ledger](guides/acp/progress.md): introduced/practiced/demonstrated states with learner evidence; no ACP concepts assessed yet.
+- Reusable reference: `/Users/peter/knowledge-bundles/harness-engineering/`, extended rather than duplicated.
+- Start with [Lab 00](guides/acp/00-inspect.md). The guide's handshake example was compiled and probed separately; no ACP adapter has been added to this project's source.
+
 ## Open threads
 
 - [ ] Flatten `llm_request` / `llm_response` into typed fields (`model`,

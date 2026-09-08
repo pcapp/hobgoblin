@@ -1,0 +1,62 @@
+{
+  "checked_at": "2026-09-08T21:38:59.087575+00:00",
+  "scope": "Local guide structure/links; isolated instructional API tests; bounded handshake probes. Not ACP conformance, Zed interoperability, or learner mastery.",
+  "wiki_markdown_files": 27,
+  "wiki_concept_documents": 24,
+  "course_markdown_files": 10,
+  "milestone_lesson_count": 7,
+  "milestone_lessons": [
+    "00-inspect.md",
+    "01-handshake.md",
+    "02-echo.md",
+    "03-turn-engine.md",
+    "04-tools.md",
+    "05-cancellation.md",
+    "06-compatibility.md"
+  ],
+  "local_links_checked": 165,
+  "course_json_examples_parsed": 6,
+  "later_named_test_assignments": 33,
+  "errors": [],
+  "sdk": "2.1.0",
+  "schema": "1.7.0",
+  "protocol": 1,
+  "handshake_example_matches_compiled_source": true,
+  "handshake_probe_total": 6,
+  "handshake_probe_passed": 6,
+  "verifier_mutations_rejected": {
+    "banner": true,
+    "wrong_version": true,
+    "hung_process": true
+  },
+  "isolated_lab02_tests": {
+    "passed": 5,
+    "scope": "four Clap parser cases and one SDK payload-construction test"
+  },
+  "isolated_later_tests": {
+    "passed": 5,
+    "scope": "permission request/response, cancel notification, prompt response, resource-link prompt typed decoding"
+  },
+  "compiled_design_sketches": [
+    "Lab 03 domain enums",
+    "Lab 03 PromptResponse expression",
+    "Lab 04 ToolResult enum",
+    "Wiki initialization expression"
+  ],
+  "existing_repo_check": "passed",
+  "existing_repo_tests_discovered": 0,
+  "protected_source_and_dependency_hashes": {
+    "src/tools.rs": "ac0fd0eaadb550d9d2885299f3de9230ba7557af519d402c23af66ef9ea7d5ea",
+    "src/main.rs": "091d6caae3aef1369b89e6b94d831a8104d1b8ba3de8e63c436c6eb3842d2905",
+    "src/agent.rs": "37ed0f2be7c2669f7407f3131ebc0e493c43fc393af375ff1d491e6b69a88187",
+    "src/wire.rs": "9a2f9a0b81574e5a81d356977f40527093ff62b56e6c3e884627d165aeea12b2",
+    "Cargo.toml": "276486b33257973845706407a2946364b775f1d5df88dca9e74e7efda9249ca4",
+    "Cargo.lock": "8ee6b275d508fb65ae7780d21a8162d0dabfdb79cc5b203a505f671364748cb6"
+  },
+  "protected_files_unchanged": true,
+  "zed_interoperability": "not tested",
+  "live_provider_tools_mcp": "not exercised",
+  "learner_mastery": "not assessed",
+  "validation_crate": "/var/folders/kj/_8y0_rj5489__0ywz2v09_9h0000gn/T/acp-milestones-6xqr5erf",
+  "application_implementation": "not added"
+}
