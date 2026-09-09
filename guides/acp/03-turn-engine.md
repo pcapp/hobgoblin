@@ -8,9 +8,9 @@
 
 ## Prerequisites and scope
 
-- Complete stages 00–02: typed `Agent.builder()` callbacks, session IDs, echo updates, early cancellation, and integrated `--acp` startup without provider credentials.
+- Complete stages 00–02: learner-owned newline framing, envelope/method DTOs, router, serialized writer queue, session IDs, echo updates, early cancellation, and integrated `--acp` startup without provider credentials.
 - Preserve the standalone handshake and the scripted echo tests as no-network diagnostics. This lesson replaces the integrated echo answer source, not its transport.
-- Use `agent-client-protocol = "=2.1.0"`, protocol v1, SDK-reexported schema 1.7.0, without unstable features.
+- Target stable ACP v1 without ACP agent/schema SDK dependencies. Serde/serde_json and Tokio are allowed; the protocol types, request correlation, and task ownership remain yours.
 - Real model requests are optional later evidence and need explicit approval; every acceptance test below uses a scripted provider.
 - Keep real tools disabled until [Lab 04](04-tools.md). A scripted tool result can exercise the loop safely now.
 
@@ -22,7 +22,7 @@ A session owns durable history; a turn borrows or temporarily owns that history 
 
 Keep `serde_json::Value` for the existing provider history initially; replacing every DTO at once hides the ownership lesson. Use small enums for outcomes/errors. Existing `async-openai`, Tokio, Serde, and tracing suffice; add a provider trait only because the scripted provider is a real second implementation. A generic async trait method avoids needing `async-trait` or a trait object initially.
 
-Read [SDK ownership/dispatch](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md) and [API outcomes](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md).
+Read [learner-owned protocol/tasks](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md), [API outcomes](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md), and canonical [prompt outcomes](https://agentclientprotocol.com/protocol/v1/prompt-turn#stop-reasons).
 
 ## Before changing anything: reproduce the diagnosis
 
@@ -59,7 +59,7 @@ In `src/agent.rs::run`, first accept caller-owned history without changing provi
 
 ### 2. Make completion and failure different types
 
-In `src/agent.rs`, introduce `TurnOutcome`, `TurnError`, and `AgentEvent`; replace each old `Ok(())` deliberately. Use this **domain design sketch**, not an SDK API or a complete solution:
+In `src/agent.rs`, introduce `TurnOutcome`, `TurnError`, and `AgentEvent`; replace each old `Ok(())` deliberately. Use this **domain design sketch**, not a wire definition or a complete solution:
 
 ```rust
 pub enum TurnOutcome { EndTurn, MaxTokens, MaxTurnRequests, Refusal, Cancelled }
@@ -91,20 +91,19 @@ For a budget of two model requests, check the budget before a third request, not
 
 Keep `src/agent.rs::run` temporarily as a CLI wrapper, or move presentation to proposed `src/cli.rs:1`. Only that adapter prints human-readable answers. In `src/main.rs::main`, preserve the stage 02 mode split and lazy provider credentials; keep tracing on stderr and redact `payload` logging from `src/agent.rs:25–35`.
 
-In the stage 02 prompt callback in `src/acp/mod.rs`, validate and reserve the session synchronously, move the responder and owned turn work into `connection.spawn`, then return. A spawn failure must release the reservation and settle the response obligation; do not strand a busy session.
+In the stage 02 prompt route in `src/acp/mod.rs`, validate and reserve the session without awaiting provider work, move its original request ID, final-response obligation, and owned turn state into an independently running Tokio task, then resume routing input. Track task handles under a connection supervisor; failed admission or a task failure must release the reservation and settle the obligation once, not strand a busy session. The reader/router must not await the turn's completion.
 
-Await provider work and reverse requests only in that spawned task. One task owns the final responder. Emit a `SessionNotification`/`SessionUpdate::AgentMessageChunk` for each domain text event; the current whole-response provider can legitimately emit one chunk, without claiming token streaming.
+Await provider work and reverse-request oneshots only in turn tasks. The router delivers replies through Lab 02's bounded pending outbound request map while continuing to handle cancellation and other sessions. One finalizer owns each prompt's final-response obligation. Convert `AssistantText` into your own DTO for a `session/update` notification with `sessionUpdate: "agent_message_chunk"`; serialize through the single bounded writer queue. The current whole-response provider can legitimately emit one chunk, without claiming token streaming.
 
-**Pinned SDK expression**, usable inside the eventual outcome mapper, grounded in [PromptResponse::new](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/schema/v1/struct.PromptResponse.html#method.new):
+Write a table-driven mapper against canonical [v1 stop reasons](https://agentclientprotocol.com/protocol/v1/prompt-turn#stop-reasons): `EndTurn` → `end_turn`, `MaxTokens` → `max_tokens`, `MaxTurnRequests` → `max_turn_requests`, `Refusal` → `refusal`, and `Cancelled` → `cancelled`. A tiny **wire result fixture**, not a full response or captured traffic:
 
-```rust
-use agent_client_protocol::schema::v1::{PromptResponse, StopReason};
-let exhausted = PromptResponse::new(StopReason::MaxTurnRequests);
+```json
+{"stopReason":"max_turn_requests"}
 ```
 
-Construct schema structs with their builders/constructors, not literals for non-exhaustive structs. Map `TurnError` to an explicit, redacted ACP error response, not `EndTurn`. Map errors separately for CLI stderr/nonzero exit.
+Wrap that result in your response envelope using the unchanged inbound request ID. Construct your own Serde DTOs, with explicit wire names; map `TurnError` to a redacted JSON-RPC error instead of any successful stop reason. Map errors separately for CLI stderr/nonzero exit.
 
-**Rationale:** [SDK ordered callbacks](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/concepts/ordering/) hold dispatch until return. Spawning is not completion: never send early `end_turn`. Restore session ownership and clear busy state before admitting the next turn, with final updates sent before the response.
+**Rationale:** a router awaiting slow work cannot process replies or cancellation. Spawning is not completion: never send early `end_turn`. Stop/join event producers, enqueue final updates then the response through one finalizer, restore session ownership, and clear busy state before admitting the next turn. FIFO stdout serialization alone cannot prevent a stray producer from enqueueing after completion; the finalizer must close that boundary too.
 
 ## Deterministic tests to type
 
@@ -142,8 +141,8 @@ These commands are **future checks after you type the tests**, not claims they p
 
 ## Teach-back and evidence
 
-Explain: who owns history during an await, who owns the responder, why a spawned task must not acknowledge completion early, and how malformed provider data differs from budget exhaustion. Show the exact assertion that would catch accidental history reset.
+Explain: who owns history during an await, who owns the original request ID and final-response obligation, why a spawned task must not acknowledge completion early, and how malformed provider data differs from budget exhaustion. Show the exact assertion that would catch accidental history reset, and the task that keeps routing reverse replies while a turn waits.
 
 Record your explanation, commands, actual discovered test names/results, and remaining gaps in [progress](progress.md) during review. Generated lessons alone do not advance a learning state.
 
-**Snippet status:** the enum sketches and exact SDK expression compile in an isolated validation crate. This proves syntax/API compatibility, not turn-engine behavior. No application/test implementation was added to this repository; the adapter and Zed integration remain learner work.
+**Snippet status:** enums are domain sketches and the JSON result follows the canonical protocol. Historical SDK-expression compilation is superseded, not evidence for this path. No revised application/test implementation was compiled or run during this documentation revision; the adapter and Zed integration remain learner work.

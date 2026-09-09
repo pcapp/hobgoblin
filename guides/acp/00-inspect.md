@@ -1,10 +1,12 @@
-# Lab 00 — Find the ACP boundary before changing anything
+# Lab 00 worksheet — Inspect the current boundary
+
+Start with [One agent, two frontends](00-architecture.md), then use this worksheet to apply its architecture to the current source.
 
 **Prerequisites:** current repo, no API credentials needed. **Deliverable:** your explanation, not code.
 
 ## Why this lab exists
 
-ACP is a bidirectional stateful protocol. Your CLI is a one-shot application. Before adding a crate, identify who owns history, who emits output, and who can stop ongoing work. This is the same architectural reasoning used for HTTP handlers and background jobs, now with Rust ownership made explicit.
+ACP is a bidirectional stateful protocol. Your CLI is a one-shot application. Before adding another frontend, identify who owns history, who emits output, and who can stop ongoing work. This is the same architectural reasoning used for HTTP handlers and background jobs, now with Rust ownership made explicit.
 
 ## 1. Establish the baseline
 
@@ -38,7 +40,7 @@ Answer before reading further:
 - `messages` is local to the `run` function, so it's lifetime is tied to the `run` function's execution.
 - At present, if Zed calls into the adapter twice with one session ID, it would not share history. Messages is local to the `run` function.
 
-**Rationale:** a session is application state, not something the SDK can infer from two requests.
+**Rationale:** a session is application state, not something the wire protocol can infer from two requests.
 
 ## 3. Follow output in `src/agent.rs:59–64` and `src/main.rs:18–24`
 
@@ -124,4 +126,4 @@ Tell Hermes:
 
 Do not change the source yet. Hermes reviews your answers, records actual evidence in [progress.md](progress.md), and helps choose the next small change.
 
-[Course](README.md) · [Next: handshake](01-handshake.md)
+[Architecture lesson](00-architecture.md) · [Course](README.md) · [Next: handshake](01-handshake.md)

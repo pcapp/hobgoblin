@@ -1,0 +1,26 @@
+{
+  "checked_at": "2026-09-08T16:59:59.233448-07:00",
+  "scope": "Documentation syntax, local link targets, active SDK API removal and existing dependency/source boundary; not handwritten Rust behavior or mastery",
+  "course_markdown_files": 10,
+  "local_links_checked": 90,
+  "json_fixtures_parsed": 12,
+  "errors": [],
+  "acp_sdk_packages": [],
+  "application_or_dependency_files_changed": [],
+  "bundle_counts": {
+    "markdown_files": 28,
+    "concept_documents": 25,
+    "reserved_indexes": 2,
+    "reserved_logs": 1,
+    "local_markdown_links": 90,
+    "local_source_resources": 2,
+    "json_fences": 9,
+    "source_entries": 78
+  },
+  "baseline": {
+    "cargo_check_locked": "passed",
+    "cargo_test_locked": "passed; 0 tests discovered"
+  },
+  "checker": "uv launches from wiki using absolute paths; missing learner binary yields expected 0/6 before implementation",
+  "passed": true
+}

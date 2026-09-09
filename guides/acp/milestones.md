@@ -2,9 +2,9 @@
 
 **Goal:** use your CodeCrafters Rust agent from Zed via stable ACP v1 over local stdio, while keeping the existing `-p` CLI. You write the application and tests; Hermes explains, inspects and verifies. This is a development sequence, not a claim that the features already exist.
 
-**Architecture:** CLI and ACP are separate adapters around session-owned turn logic. The SDK owns protocol framing; your application owns conversation state, model calls, tool policy, outcomes and cleanup. Start without a model so protocol defects are not confused with credentials or provider failures.
+**Architecture:** CLI and ACP are separate adapters around session-owned turn logic. You implement ACP framing, message validation/dispatch, response correlation and serialized output, as well as conversation state, model calls, tool policy, outcomes and cleanup. Start without a model so protocol defects are not confused with credentials or provider failures.
 
-**Stack:** existing Tokio, Clap, Serde, tracing and async-openai; add exact SDK pin `agent-client-protocol = "=2.1.0"` for the first lab. Add other crates only when a lesson needs them. See the wiki's [crate decision table](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md).
+**Stack:** keep existing Tokio, Clap, Serde/serde_json, tracing and async-openai. Do not add an ACP agent SDK or external ACP schema crate. Lab 01 uses standard-library synchronous I/O to isolate framing; Lab 02 uses Tokio for your concurrent transport. Define your own wire types from the protocol. See the wiki's [Rust protocol reference](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md).
 
 > **For Hermes:** this is a teaching plan, not permission to implement it with coding agents. Re-read `AGENTS.md`, the actual source/lockfile and `progress.md` before coaching. Do not edit application Rust unless Peter explicitly requests it.
 
@@ -12,21 +12,21 @@
 
 | Milestone | Deliverable you build | Knowledge you earn | Gate before advancing |
 |---|---|---|---|
-| [00 — Inspect](00-inspect.md) | Boundary worksheet; no edits | Process/connection/session/turn, ownership and stdout | Explain the current code's gaps using source symbols |
-| [01 — Initialize](01-handshake.md) | Standalone typed handshake | Builders, responders, version/capability negotiation | Six no-key subprocess probes pass; explain each |
-| [02 — Echo in Zed](02-echo.md) | `--acp` startup, session store, updates, slow-echo cancellation | CLI routing, ID ownership, state machines, ordered dispatch | Parser/process/session tests; two Zed threads echo independently |
+| [00 — Architecture](00-architecture.md) | Shared-core diagram, source map, first-refactor test plan; no code edits | Terminal/ACP frontends, conversation versus agent loop, session lifetime, events and effects | Explain ownership and dependencies; complete the [inspection worksheet](00-inspect.md) |
+| [01 — Initialize](01-handshake.md) | Handwritten stdio handshake | Framing, JSON-RPC envelopes, dispatch, correlation and negotiation | Six baseline probes plus learner-owned framing/error/flush tests; explain each |
+| [02 — Echo in Zed](02-echo.md) | `--acp` startup, async transport, session store, updates, slow-echo cancellation | Reader/router/writer ownership, CLI routing, IDs and state machines | Parser/process/session tests; two Zed threads echo independently |
 | [03 — Run your agent](03-turn-engine.md) | Session-owned history and adapter-independent turn engine | Borrowing across awaits, typed outcomes, provider test doubles | Deterministic multi-turn/isolation/error tests; CLI preserved |
-| [04 — Expose safe tools](04-tools.md) | Tool reporting, permission gates, capability-aware execution | Approval versus capability; filesystem/terminal lifetime | Denial has zero side effects; cwd, exit and cleanup tests |
+| [04 — Expose safe tools](04-tools.md) | Reverse-request correlation, tool reporting, permission gates, capability-aware execution | Pending-request maps; approval versus capability; filesystem/terminal lifetime | Denial has zero side effects; cwd, exit and cleanup tests |
 | [05 — Stop reliably](05-cancellation.md) | Cancellation across provider, approval and commands | Cooperative cancellation, task/resource ownership, races | Bounded cancellation, exactly-once completion, no orphan work |
 | [06 — Prove the supported profile](06-compatibility.md) | Baseline resource links + stdio MCP, negative-path matrix, Zed evidence | Conformance versus demo; reproducible compatibility claims | Deterministic suite plus redacted end-to-end evidence for a named Zed/version profile |
 
-Milestone 00 is a short preflight, not a week of theory. Milestone 01 is your first coding session. Break later milestones at their checkpoints; “complete one test and one behavior” is a useful session goal. Do not estimate mastery from time spent or checkboxes.
+Milestone 00 establishes the architecture before protocol details. Milestone 01 is your first coding session. Break later milestones at their checkpoints; “complete one test and one behavior” is a useful session goal. Do not estimate mastery from time spent or checkboxes.
 
-## Start here: initialization
+## Start here: one agent, two frontends
 
-Read [what initialization means](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-initialization.md), then do the Lab 00 source inspection and [Lab 01](01-handshake.md).
+Begin with [Lab 00](00-architecture.md): one executable, a terminal frontend for one-shot/interactive use, an ACP frontend, and a shared session-aware turn engine. Map the current source and plan caller-owned history plus presentation-free answers. Use the [inspection worksheet](00-inspect.md) to test that understanding.
 
-Your first finish line is deliberately small:
+Then read [what initialization means](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-initialization.md) and start [Lab 01](01-handshake.md). Its first coding finish line is deliberately small:
 
 - Start a process with no model key.
 - Send an `initialize` request.
@@ -95,7 +95,7 @@ Hermes reviews correctness, negative cases, capability honesty, stdout purity, C
 
 ## Current validation versus future work
 
-The existing repository builds but currently discovers no Rust tests. Application features above are assignments, not implemented adapters. The supplied [handshake verifier](check_handshake.py) is ready to use after you build your example. Guide validation details and actual probe frames are in [milestone-validation.json](milestone-validation.json) and [handshake-validation.json](handshake-validation.json); their temporary executable path is historical evidence, not your install path.
+The existing repository builds but currently discovers no Rust tests. Application features above are assignments, not implemented adapters. The supplied [handshake verifier](check_handshake.py) is implementation-independent and ready to use after you build your example. [milestone-validation.json](milestone-validation.json) and [handshake-validation.json](handshake-validation.json) are historical checks of the superseded SDK-based course, not validation of the handwritten replacement; their temporary executable path is not your install path.
 
 No learner mastery, real Zed conversation, paid model call or real tool/MCP side effect is established by generating these guides.
 

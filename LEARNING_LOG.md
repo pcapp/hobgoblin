@@ -233,10 +233,10 @@ The original one-liner didn't bind because it wasn't specific.
 
 **2026-09-08 — course setup, not mastery evidence.** Target: expose this agent to Zed over local stdio using Agent Client Protocol (ACP). Keep the existing CLI. Peter writes the Rust; Hermes provides explanations, bounded exercises, and verification.
 
-- [Project course](guides/acp/README.md): API-focused lessons and source-specific integration seams.
-- [Progress ledger](guides/acp/progress.md): introduced/practiced/demonstrated states with learner evidence; no ACP concepts assessed yet.
+- [Project course](guides/acp/README.md): handwritten ACP protocol lessons and source-specific integration seams. No ACP agent SDK; Serde and Tokio are allowed.
+- [Progress ledger](guides/acp/progress.md): learner explanations, review feedback and evidence states; authoritative current progress lives there.
 - Reusable reference: `/Users/peter/knowledge-bundles/harness-engineering/`, extended rather than duplicated.
-- Start with [Lab 00](guides/acp/00-inspect.md). The guide's handshake example was compiled and probed separately; no ACP adapter has been added to this project's source.
+- Start with [Lab 00 — One agent, two frontends](guides/acp/00-architecture.md), complete the [source-inspection worksheet](guides/acp/00-inspect.md), then build the [Lab 01 handshake](guides/acp/01-handshake.md). The previously compiled handshake used the superseded SDK approach and does not validate this replacement. No ACP adapter has been added to this project's source.
 
 ## Open threads
 

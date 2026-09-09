@@ -1,8 +1,8 @@
 # Learn ACP by connecting this Rust agent to Zed
 
 > **Scope:** teach and verify; Peter writes the Rust. The current program is not yet an ACP agent.
-> **Target:** local Zed over stdio, stable ACP v1, Rust SDK documentation pinned to 2.1.0.
-> **Start:** [Development milestones](milestones.md) → [Lab 00: short preflight](00-inspect.md) → [Lab 01: initialize](01-handshake.md).
+> **Target:** local Zed over stdio, stable ACP v1, with a protocol implementation you write yourself. Serde and Tokio are allowed; no ACP agent SDK or external ACP schema crate.
+> **Start here:** [Lab 00 — One agent, two frontends](00-architecture.md), then its [source-inspection worksheet](00-inspect.md) and [Lab 01 — Build an ACP handshake](01-handshake.md).
 
 ## What you are building
 
@@ -23,7 +23,7 @@ The shared reference lives outside this repo in the existing OKF wiki, not in a 
 
 - [ACP mental model](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-mental-model.md)
 - [API map and annotated JSON exchange](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md)
-- [Rust packages, types, and async pitfalls](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md)
+- [Handwritten Rust framing, dispatch and async ownership](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md)
 - [Permissions, tools, and cancellation](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md)
 - [Teaching and evidence policy](file:///Users/peter/knowledge-bundles/harness-engineering/workflows/acp-learning.md)
 - [Obsidian now, Starlight later](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-wiki-viewing.md)
@@ -47,21 +47,24 @@ Source locations were checked when this guide was created. Re-find symbols after
 | `src/agent.rs:81–86` loop exhaustion | Returns success without a meaningful turn outcome | Distinguish `max_turn_requests` |
 | `src/tools.rs:73,96` local disk I/O | Does not reflect unsaved editor buffers | Evaluate client filesystem delegation |
 | `src/tools.rs:120–137` blocking process output | No exit-success check; JSON byte arrays; no session cwd | Design exit-aware, cancellable execution and deliberate text conversion |
-| `src/wire.rs:4–29` provider DTOs | These are not ACP messages | Keep provider decoding types separate from SDK schema types |
+| `src/wire.rs:4–29` provider DTOs | These are not ACP messages | Keep provider decoding types separate from your own ACP wire types |
 
 ## Development milestones and step-by-step guides
 
 Start with the [milestone roadmap](milestones.md): outputs, learning objectives, test layers, review procedure and the first small finish line.
 
-- [00 — Inspect the current boundary](00-inspect.md)
-- [01 — Initialize without a model](01-handshake.md): typed API example and supplied no-key verification script.
+- [00 — One agent, two frontends](00-architecture.md): shared turn engine, interactive versus one-shot loops, session ownership, events, tool execution, and the first refactor plan.
+  - [Source-inspection worksheet](00-inspect.md): apply the architecture to the current code.
+- [01 — Implement initialization yourself](01-handshake.md): newline framing, envelope validation, method dispatch and correlated responses; supplied no-key verification script.
 - [02 — Start in ACP mode and echo into Zed](02-echo.md): CLI routing, session state, update ordering and early cancellation.
 - [03 — Connect session-owned turn logic](03-turn-engine.md): provider fakes, explicit outcomes and CLI preservation.
 - [04 — Expose tools safely](04-tools.md): permission, capability, workspace and execution tests.
 - [05 — Cancel under load](05-cancellation.md): provider/approval/process cleanup and race tests.
 - [06 — Verify the supported profile](06-compatibility.md): baseline resource links, stdio MCP and Zed acceptance evidence.
 
-Each lesson separates concepts, files/actions, API examples, tests you write and the review gate. Later paths are proposed design targets; re-read actual code before applying changes. Rust test targets described in lessons are assignments, not already implemented tests. Hermes supplies guidance and review tooling, not application Rust.
+Each lesson separates concepts, files/actions, small design examples, tests you write and the review gate. Later paths are proposed design targets; re-read actual code before applying changes. Rust test targets described in lessons are assignments, not already implemented tests. Hermes supplies guidance and review tooling, not application Rust. You own ACP framing, dispatch, request correlation, wire types, and agent behavior throughout; later lessons do not switch back to an agent SDK.
+
+Historical `validation.json`, `handshake-validation.json` and `milestone-validation.json` record checks of the superseded SDK-based material. They are retained as history, not evidence that the handwritten replacement works.
 
 ## Zed setup: only after session/prompt works
 
@@ -77,4 +80,4 @@ Source: [Zed External Agents](https://zed.dev/docs/ai/external-agents).
 
 Use [progress.md](progress.md). Explain the mechanism, attempt the exercise, then ask Hermes to verify. A passing assistant-run build is a baseline observation, not evidence that you have mastered the concept. At session end, record one mechanism learned, one piece of evidence, and the next open question.
 
-**Suggested next message:** “Start ACP Lab 00. Ask me the boundary questions one at a time.”
+**Suggested next message:** “Start Lab 00. Help me map the current code to the shared core and its frontends.”

@@ -10,19 +10,19 @@
 
 - Pass Labs 03–05, including provider mocks, approval, workspace isolation, cancellation races, and cleanup.
 - Retain the standalone handshake, scripted echo tests, and integrated `--acp` startup without a model key from stage 02.
-- Teaching ACP pin: `agent-client-protocol = "=2.1.0"`; protocol **v1**; schema **1.7.0** via `schema::v1`; no unstable ACP features.
+- Teaching protocol target: stable ACP **v1**, learner-owned envelopes/DTOs, router, request correlation, serialized writer queue, and supervised turn tasks. Serde/serde_json and Tokio are allowed; **no ACP agent or schema SDK dependencies**.
 - ACP and MCP have different version negotiations and different roles: Zed is the ACP client; your agent is the MCP client of each configured server.
-- Read [API baseline](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md), [SDK reference](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md), [safety/cancellation](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), and [evidence policy](file:///Users/peter/knowledge-bundles/harness-engineering/workflows/acp-learning.md).
+- Read [API baseline](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md), [learner-owned Rust protocol](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md), [safety/cancellation](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), and [evidence policy](file:///Users/peter/knowledge-bundles/harness-engineering/workflows/acp-learning.md).
 
 ## Why these are not optional polish
 
 [v1 initialization](https://agentclientprotocol.com/protocol/v1/initialization) requires baseline text and resource-link prompts. Image/audio/embedded resources are separate optional capabilities. [v1 session setup](https://agentclientprotocol.com/protocol/v1/session-setup#mcp-servers) requires stdio MCP support; HTTP/SSE MCP are optional. Empty `mcpServers` in early labs postponed implementation, not the requirement.
 
-Use SDK typed content at ingress, then domain prompt parts at the provider boundary. Keep URI identity separate from retrieved text; preserving a resource link does not authorize arbitrary filesystem or network access. Use an established URI parser such as `url` for conversion rather than stripping `file://` manually; reuse Lab 04's path and permission policy.
+Use your own Serde content DTOs at ingress, then domain prompt parts at the provider boundary. Keep URI identity separate from retrieved text; preserving a resource link does not authorize arbitrary filesystem or network access. Use an established URI parser such as `url` for conversion rather than stripping `file://` manually; reuse Lab 04's path and permission policy.
 
-For MCP, prefer a dedicated client boundary in `src/acp/mcp.rs`. One documented candidate is [rmcp 3.2.0](https://docs.rs/rmcp/3.2.0/rmcp/), used directly as an MCP client, not as interchangeable ACP schema types. **Its joint dependency/build compatibility with this project has not been verified.** Resolve and compile a small learner-owned spike before adopting an exact pin; inspect its client, transport, process, and server-fixture feature flags.
+For MCP, keep a dedicated client boundary in `src/acp/mcp.rs`. **MCP library choice is separate and optional, not silently decided by this course:** choose a learner-owned implementation of the needed MCP subset, or explicitly approve a dedicated MCP client library after a small dependency/build spike. A library choice must not bring an ACP agent/schema SDK into the dependency graph or supply your ACP DTOs. No exact MCP crate/version is selected here. If choosing a library, inspect its client, transport, process, and fixture features and verify its resolved dependencies yourself.
 
-Do not assume `agent-client-protocol-rmcp` shares the ACP SDK's version number or automatically consumes `session/new.mcpServers`; its server-building bridge is a different responsibility. Stable stdio MCP does not require enabling MCP-over-ACP experimental features. No additional crate was installed during guide authoring.
+Whichever implementation you choose, use the canonical [MCP specification](https://modelcontextprotocol.io/specification/2025-06-18) for a documented version: verify [lifecycle](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle), [stdio transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports), [tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools), and [cancellation](https://modelcontextprotocol.io/specification/2025-06-18/basic/utilities/cancellation). This is a fixture version target, not a claim that it is the newest MCP version. Stable stdio MCP does not require experimental MCP-over-ACP bridging. No additional crate was installed during guide authoring.
 
 ## Before editing: audit the remaining boundary
 
@@ -60,9 +60,9 @@ In the review evidence you will later record in `guides/acp/progress.md`, distin
 
 ### 2. Finish resource-link handling end to end
 
-Create `src/acp/content.rs:1` for typed prompt conversion; extend proposed `src/session.rs` domain input if needed. Match text and resource links in incoming `PromptRequest`; preserve part order, name, URI, and supplied metadata. Map references into an explicit provider-visible representation, not an invented file body.
+Create `src/acp/content.rs:1` for typed prompt conversion; extend proposed `src/session.rs` domain input if needed. Match text and resource links in your `session/prompt` parameter DTO; preserve part order, name, URI, and supplied metadata. Map references into an explicit provider-visible representation, not an invented file body.
 
-This **illustrative ACP input**, grounded in [ResourceLink in SDK 2.1.0](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/schema/v1/struct.ResourceLink.html), is not a captured request. Its path is a fixture label; tests substitute their temporary absolute URI:
+This **illustrative ACP input**, grounded in canonical [v1 resource links](https://agentclientprotocol.com/protocol/v1/content#resource-link) and [prompt requests](https://agentclientprotocol.com/protocol/v1/prompt-turn), is not a captured request. Its path is a fixture label; tests substitute their temporary absolute URI:
 
 ```json
 {"jsonrpc":"2.0","id":30,"method":"session/prompt","params":{"sessionId":"s1","prompt":[{"type":"text","text":"Read this reference if permitted"},{"type":"resource_link","name":"notes.txt","uri":"file:///tmp/acp-lab/notes.txt","mimeType":"text/plain"}]}}
@@ -74,7 +74,7 @@ Implement supported file-link resolution through the client Read route when requ
 
 ### 3. Build a small, controlled MCP fixture
 
-Create proposed `src/bin/acp_mcp_fixture.rs:1` yourself as a test-only-purpose executable, then `tests/acp_compatibility.rs:1` for black-box tests. The fixture should speak actual MCP over stdio using the selected MCP SDK or a strictly bounded test protocol implementation. Do not install or launch arbitrary third-party MCP servers.
+Create proposed `src/bin/acp_mcp_fixture.rs:1` yourself as a test-only-purpose executable, then `tests/acp_compatibility.rs:1` for black-box tests. The fixture should speak actual MCP over stdio using a strictly bounded learner-owned protocol implementation or your separately approved MCP library. Do not install or launch arbitrary third-party MCP servers.
 
 Define its exact contract: negotiate one documented supported MCP version, complete initialize/initialized, answer paginated `tools/list`, and expose `echo_label` with one string argument `label`. A call with `cedar` returns text `fixture:cedar`. A second tool `wait_for_release` announces started on a test-control channel and waits, for cancellation testing. Add controlled failure modes for initialization failure and tool-level error.
 
@@ -88,9 +88,9 @@ cargo build --locked --bin acp_mcp_fixture
 
 ### 4. Connect session-owned MCP clients before claiming readiness
 
-In `src/acp/mcp.rs:1`, implement `SessionMcpClients`; in the `session/new` callback in `src/acp/mod.rs`, reserve a provisional session, move setup/responder into spawned work, and return promptly. Validate configuration, connect and initialize each stdio server, collect tools, then respond with the session ID. Keep slow startup outside ordered dispatch too.
+In `src/acp/mcp.rs:1`, implement `SessionMcpClients`; in the `session/new` route in `src/acp/mod.rs`, reserve a provisional session, move setup and the original request ID/response obligation into supervised async work, and resume routing promptly. Validate configuration, connect and initialize each stdio server, collect tools, then enqueue the correlated response containing the session ID. Keep slow startup outside the reader/router too. Each MCP child has its own private transport, request-ID allocator, bounded pending map, and teardown ownership (or the equivalent guaranteed by an approved MCP library); never mix those IDs/replies with the ACP connection's map.
 
-This **design sketch** intentionally uses domain labels rather than unverified SDK method signatures:
+This **design sketch** intentionally uses domain labels rather than library method signatures:
 
 ```text
 McpServerStdio(command, args, env) → validated child transport
@@ -112,7 +112,7 @@ Extend `src/tools.rs::specs` into a session-aware catalog and route invocations 
 
 Preserve MCP tool-level failure separately from transport failure; map text results and unsupported rich content honestly. Server descriptions/annotations are untrusted input, not authority to bypass approval. Ask approval for unknown/sensitive MCP effects under the course policy; for the controlled read-only echo fixture, an explicit test policy may allow it.
 
-Propagate Lab 05's cancellation into in-flight MCP work using the selected SDK's supported mechanism; stop new calls, settle results, and retain or restart the session service deliberately. On disconnect or failed setup, stop/reap all owned fixture children. **Rationale:** “external tool” cannot mean “outside our cancellation and approval policy.”
+Propagate Lab 05's cancellation into in-flight MCP work using the negotiated MCP version's cancellation semantics; implement them yourself or verify the separately chosen library exposes them. For the documented fixture version, `notifications/cancelled` refers to an outstanding MCP request; clients must not cancel MCP `initialize` this way. Bound failed/stalled initialization through owned-child teardown instead. Stop new calls, settle results, and retain or restart the session service deliberately. Keep MCP request cancellation distinct from ACP `session/cancel`; a cancelled local waiter is not proof of remote termination. On disconnect or failed setup, stop/reap all owned fixture children. **Rationale:** “external tool” cannot mean “outside our cancellation and approval policy.”
 
 ### 6. Exercise transport and failure boundaries before Zed
 
@@ -122,7 +122,7 @@ For black-box provider prompts, implement a loopback HTTP scripted server in `te
 
 The harness owns stdin/stdout/stderr and child cleanup, writes compact JSON lines, collects frames by request ID, and handles reverse requests while prompts are outstanding. Do not block waiting for prompt completion before answering permissions. Test no-key startup from a temporary cwd so repo `.env` loading cannot accidentally supply credentials; remove provider keys from the child environment explicitly.
 
-**Rationale:** black-box framing and no-key startup checks catch regressions that unit tests against typed callbacks cannot see.
+**Rationale:** black-box framing and no-key startup checks catch regressions that unit tests calling route functions directly cannot see. Drive the actual reader/router and writer queue, including reverse replies while turns remain pending.
 
 ## Named deterministic tests: Arrange / Act / Assert
 
@@ -135,9 +135,12 @@ Put the following in `tests/acp_compatibility.rs`; use the scripted provider fro
 - **`acp_stage06_mcp_cancel_and_disconnect`** — Arrange `wait_for_release` started. Act with cancel, then a new turn; separately disconnect during setup/call. Assert one cancelled prompt, a usable next turn, and all owned fixture children reaped on teardown.
 - **`acp_stage06_no_key_startup_and_cli`** — Arrange separate clean no-key and dummy-key loopback-provider children in a temporary cwd. Act with no-key `--acp` initialize/new, then no-key provider prompt; separately run CLI help and `-p` against the loopback fixture. Assert no startup key requirement for ACP, an explicit prompt-time error for the missing key, preserved CLI answer/exit semantics, and zero real-provider traffic.
 - **`acp_stage06_version_and_request_errors`** — Arrange fresh processes for requested versions 1/2, pre-initialize new, unknown method, unknown session, and invalid prompt params. Act once per case. Assert version 1 selected (not echoed 2), no pre-init session, correlated errors for invalid requests, no state mutation, and no panic.
-- **`acp_stage06_framing_and_capabilities`** — Arrange split JSON writes, multiple frames in one write, malformed JSON, incomplete EOF, and absent/read-only/full client capabilities. Act through bounded probes. Assert complete frames correlate, errors/clean closure follow the documented SDK behavior, no hangs/raw stdout logs, and no forbidden client calls or local fallback.
+- **`acp_stage06_framing_and_capabilities`** — Arrange split JSON writes, multiple frames in one write, malformed JSON, incomplete EOF, and absent/read-only/full client capabilities. Act through bounded probes. Assert complete frames correlate, errors/clean closure follow your documented framing policy and JSON-RPC rules, no hangs/raw stdout logs, and no forbidden client calls or local fallback.
+- **`acp_stage06_bidirectional_ids_and_limits`** — Arrange equal inbound/outbound IDs, string versus numeric IDs, out-of-order and duplicate reverse replies, full pending/output queues, and writer failure. Act while a prompt is outstanding. Assert correct oneshot correlation, no response to a reply, no cross-turn authorization, bounded overload/teardown, and no orphan tasks or unresolved waiters hidden as success.
 
-For malformed framing, inspect the pinned transport/error contract and assert the chosen documented error-or-close behavior; do not require recovery if the SDK closes. For valid unknown methods assert method-not-found; invalid typed params must not look successful. Unknown notifications receive no response. Add a frame-size/resource-limit case using the actual selected transport limit rather than an invented constant.
+For framing, inspect canonical [ACP stdio](https://agentclientprotocol.com/protocol/v1/transports) and [JSON-RPC errors](https://www.jsonrpc.org/specification#error_object), then test the policy you own. For a complete newline-delimited malformed JSON frame, emit parse error `-32700` with null ID; for an invalid request envelope, use `-32600` with the appropriate ID rule. Valid unknown methods get `-32601`; invalid method params get `-32602`, correlated to the original ID. Unknown notifications receive no response; malformed/unknown replies must not start an error-response loop. Preserve string/numeric ID distinctions and detect success by field presence, including `result: null`. Test unknown extension fields without granting unsupported capabilities.
+
+Preserve Lab 01's local frame limit of **64 KiB including the terminating newline**, enforced before unbounded allocation. Oversized input and unterminated EOF report to stderr and close nonzero; EOF with no buffered fragment is clean. Document bounded teardown for invalid UTF-8 too; never execute a partial frame. ACP stdio carries individual messages, not a batch array. Test boundary-size frames and your configured writer-queue/pending-request limits; these limits and deadlines are local policy, not protocol constants. Stop accepting work and settle/join owned tasks on EOF or write failure; do not claim a response was delivered on a dead pipe. Include an open-stdin flush test rather than relying on the Lab 01 checker to prove that property.
 
 ```sh
 cargo test --locked --test acp_compatibility acp_stage06_ -- --list
@@ -169,4 +172,4 @@ Check every named test is discovered and executes. Use readiness gates plus boun
 
 Explain why “no optional capabilities” still requires resource links and stdio MCP; distinguish ACP vs MCP request IDs/roles/versions; show how MCP tool output becomes a provider result without becoming ACP stdout. Identify one passing test that cannot prove general compatibility.
 
-Record learner explanations and actual results in [progress](progress.md) during review; generated content does not promote mastery. **Snippet status:** the resource-link JSON deserializes into the pinned SDK `PromptRequest` in an isolated crate; it is an illustration, not captured traffic. Control flow is a design sketch. The candidate MCP crate combination, fixture, application integration, and Zed acceptance were not built or run during guide authoring.
+Record learner explanations and actual results in [progress](progress.md) during review; generated content does not promote mastery. **Snippet status:** the resource-link JSON follows canonical v1 content/prompt fields; it is an illustration, not captured traffic. Historical SDK deserialization checks are superseded, not validation of your DTOs. Control flow is a design sketch. No MCP dependency choice, fixture, revised application integration, or Zed acceptance was built/run during this documentation revision.

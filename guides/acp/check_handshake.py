@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = []
+# ///
 """Bounded, no-model ACP Lab 01 probes. Python 3.9+, standard library only."""
 import argparse
 import datetime

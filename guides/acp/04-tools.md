@@ -11,17 +11,17 @@
 - Pass Lab 03's scripted-provider, session isolation, CLI regression, and response-ordering gates.
 - Retain the stage 02 cancellation path. Approval waits already require a responsive connection; full interruption is exercised in Lab 05.
 - Work only in a disposable workspace you create for this lab, not the repository or personal files.
-- Keep `agent-client-protocol = "=2.1.0"`, protocol v1, schema 1.7.0, stable features. Reuse Tokio, Serde, `schemars`, and tracing.
+- Keep stable ACP v1 with learner-owned protocol DTOs and no ACP agent/schema SDK dependencies. Reuse Tokio, Serde/serde_json, `schemars` for existing tool argument schemas, and tracing.
 
 ## Concepts and crate choices
 
 Reporting, permission, and execution are separate responsibilities. A capability says the client implements a method; it is not approval. A model-requested tool name is untrusted input, not authorization.
 
-Use a typed application `ToolResult`, an async executor boundary, and a separate ACP presenter. Keep argument schemas in `src/tools.rs`; reuse the existing provider schema format. Prefer the SDK's `schema::v1` types to manually assembled ACP JSON. Tokio channels support the fake peer; add direct Tokio `sync`/`time` features yourself if not already selected in earlier labs.
+Use a typed application `ToolResult`, an async executor boundary, and a separate ACP presenter. Keep argument schemas in `src/tools.rs`; reuse the existing provider schema format. Define your own request/result/update DTOs from canonical ACP fields and serialize with Serde; do not import an ACP schema crate. Tokio channels support correlation and the fake peer; retain direct `io-util`/`io-std`/`sync` features from Lab 02 and `time` for bounded requests.
 
 For this course, **local policy** requires allow-once approval for writes and commands, constrains reads to the session workspace, and fails unavailable client operations explicitly. There is no silent fallback to `std::fs` or local `bash` in ACP mode. CLI may retain its explicit local executor, clearly separated from ACP policy.
 
-Read [tool safety](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), [API directions/capabilities](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md), and [SDK dispatch](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md).
+Read [tool safety](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), [API directions/capabilities](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md), and [learner-owned routing/correlation](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md).
 
 ## Diagnose before editing
 
@@ -50,7 +50,7 @@ Use `src/acp/mod.rs` as the adapter root below, or the equivalent stage 02 `src/
 
 In `src/tools.rs`, extract argument validation from `read_file_tool`, `write_file_tool`, and `run_bash_tool`. Retain `Read`/`Write`/`Bash` names and schemas. Introduce a validated invocation and typed result; make `execute_tool_call` dispatch to the selected executor rather than immediately invoking disk/process operations.
 
-**Domain design sketch**, not an SDK definition or full implementation:
+**Domain design sketch**, not a wire definition or full implementation:
 
 ```rust
 pub enum ToolResult {
@@ -66,7 +66,7 @@ Map this result into both model tool messages and UI status. Command exit code z
 
 ### 2. Build capability and workspace checks first
 
-Create `src/acp/tools.rs:1` for the ACP executor and `src/workspace.rs:1` for the local workspace policy. In the initialization callback in `src/acp/mod.rs`, retain **client capabilities from the request**, not from your response. Filter the provider tool catalog per session, and still validate every requested tool defensively.
+Create `src/acp/tools.rs:1` for the ACP executor and `src/workspace.rs:1` for the local workspace policy. In the initialization route in `src/acp/mod.rs`, retain **client capabilities from the request**, not from your response. Filter the provider tool catalog per session, and still validate every requested tool defensively.
 
 Store the absolute `session/new.cwd` in `SessionState` from Lab 03. Resolve relative paths against it, never `std::env::set_current_dir`. Reject traversal and disallowed absolute paths. For existing paths, consider canonical ancestors/symlinks; for new files, validate the existing parent and final component. Document TOCTOU limitations: this is not an OS sandbox, and client/local filesystem views can differ.
 
@@ -78,7 +78,7 @@ In `src/acp/tools.rs`, allocate a tool-call ID unique within the session (includ
 
 For writes/commands offer only `allow_once` and `reject_once` initially. Match the returned **option ID** against the exact offered options; unknown IDs, cancelled outcomes, peer errors, and missing replies never authorize execution. Re-check active-turn cancellation immediately before the side effect.
 
-The following **illustrative wire fixture**, grounded in [v1 permissions](https://agentclientprotocol.com/protocol/v1/tool-calls#requesting-permission), is not a captured exchange. Typed entry point: [RequestPermissionRequest](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/schema/v1/struct.RequestPermissionRequest.html).
+The following **illustrative wire fixture**, grounded in [v1 permissions](https://agentclientprotocol.com/protocol/v1/tool-calls#requesting-permission), is not a captured exchange. Define the request/outcome DTOs yourself; ID 50 is agent-allocated, unrelated to the outstanding client's prompt ID or the tool-call ID.
 
 ```json
 {"jsonrpc":"2.0","id":50,"method":"session/request_permission","params":{"sessionId":"s1","toolCall":{"toolCallId":"t1-write","title":"Write scratch.txt","kind":"edit","status":"pending"},"options":[{"optionId":"allow-once","name":"Allow once","kind":"allow_once"},{"optionId":"reject-once","name":"Reject","kind":"reject_once"}]}}
@@ -90,11 +90,15 @@ The following **illustrative wire fixture**, grounded in [v1 permissions](https:
 
 A selected reject is not a cancelled prompt. Return a denied tool result to the model and mark the tool failed with an explanation. A cancelled approval means the turn was cancelled; stop work and complete through the cancellation path.
 
-**Rationale:** `connection.send_request(request).block_task().await` belongs in the spawned turn task from Lab 03, never the ordered callback. Otherwise the permission reply cannot be dispatched. Send `in_progress` only after validation/approval; finish with `completed` or `failed`. There is no wire tool-status `cancelled` variant in this schema.
+Use the pending outbound request map introduced in Lab 02, not an await inside the reader/router. In your own request operation: reserve a bounded slot, allocate a non-reused ID, register its method/session/generation context and oneshot sender, enqueue the serialized request, then await the receiver in the turn task. The router validates a reply, removes exactly its entry, and delivers either result or error. Validate method-specific result DTOs before trusting them. No map lock may span an enqueue or reply await.
+
+On enqueue failure, timeout, cancellation, or disconnect, settle/remove the entry and wake its waiter with a typed failure; dropping a receiver alone does not remove a map entry. Never reuse timed-out IDs. Late/unknown/duplicate replies cannot authorize work and receive no response. If cancellation races with a resource-creating request, transfer its correlation to a bounded tracked cleanup owner rather than losing a late terminal ID (Lab 05). Bound both map size and each wait; reserve cleanup capacity or another bounded admission path so a full map of ordinary requests cannot prevent kill/release.
+
+**Rationale:** waiting for a permission oneshot is safe in an independently running turn task only because the reader/router continues to deliver replies and cancel signals. Send `in_progress` only after validation/approval; finish with `completed` or `failed`. Canonical v1 tool statuses have no wire `cancelled` variant; cancellation is a prompt stop reason.
 
 ### 4. Delegate editor-aware file access
 
-Implement Read/Write routes in `src/acp/tools.rs` using `fs/read_text_file` and `fs/write_text_file`, with validated absolute paths and the session ID. Search the [pinned schema](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/schema/v1/) for `ReadTextFileRequest` and `WriteTextFileRequest`, then inspect constructors before typing.
+Implement Read/Write routes in `src/acp/tools.rs` using `fs/read_text_file` and `fs/write_text_file`, with validated absolute paths and the session ID. Read canonical [filesystem methods](https://agentclientprotocol.com/protocol/v1/file-system) and [wire schema](https://agentclientprotocol.com/protocol/v1/schema), then define only the DTOs needed. Route each reply by its own ID and validate the success/error envelope before decoding content. Where examples disagree, record the discrepancy and use the canonical schema; follow initialization's request placement for client capabilities, not the filesystem page's contradictory response example.
 
 A read result comes from the client, including unsaved edits where supported. A successful approved write must be checked in the fake client's file store and later read back in Zed; the tool card alone is not proof. Bound content sizes and redact logs. **Rationale:** editor filesystem semantics are part of the integration, not an interchangeable local read optimization.
 
@@ -127,6 +131,8 @@ Put tests in `src/acp/tools.rs` under `#[cfg(test)]`; reuse `src/acp/test_suppor
 - **`acp_stage04_nonzero_terminal_exit_is_failure`** — Arrange create→ID, exit code 7, textual output and truncation flag. Act with approved Bash. Assert failed tool status, preserved exit/output/truncation in model result, and exactly one successful release.
 - **`acp_stage04_terminal_error_still_releases`** — Arrange a valid terminal ID then wait/output error in separate cases. Act through cleanup. Assert a release attempt in both, no completed tool status, and no later request using a released ID.
 - **`acp_stage04_tool_ids_correlate_without_collision`** — Arrange repeated provider call IDs in two turns. Act through approval and result. Assert ACP IDs differ across turns but remain stable within each lifecycle; provider tool messages retain their original IDs.
+- **`acp_stage04_reverse_replies_are_correlated`** — Arrange concurrent permission/read requests, an inbound prompt with an equal numeric ID, and replies delivered out of order. Act through the real reader/router. Assert each waiting task receives only its own typed result/error and the inbound response obligation remains independent.
+- **`acp_stage04_pending_requests_are_bounded`** — Arrange a full map, enqueue failure, timeout, duplicate/unknown reply, and disconnect as separate cases. Assert bounded admission, all abandoned waiters settled/entries removed, no new authorization from late replies, no response-to-response loop, and cleanup requests can still make progress.
 
 Drive every reply through the real asynchronous peer route, not just a direct permission function call, so the test would catch dispatch deadlock. Use explicit started/reply gates and bounded timeouts, not sleep-based timing.
 
@@ -154,4 +160,4 @@ Explain why a supported write still needs approval, why “selected” is not al
 
 Record actual attempts/results in [progress](progress.md) during review. Do not label the generated design as demonstrated understanding.
 
-**Snippet status:** the Rust result sketch compiles, and the JSON fixtures deserialize into the SDK 2.1.0 permission request/response types in an isolated crate. These are illustrations, not captured traffic or an implemented executor. Client-terminal and Zed behavior remain unverified until exercised.
+**Snippet status:** the Rust result is a domain sketch and the permission fixtures follow canonical v1 wire fields. Historical SDK deserialization checks are superseded, not validation of your DTOs or router. No revised executor or tests were compiled/run during this documentation revision. Client-terminal and Zed behavior remain unverified until exercised.

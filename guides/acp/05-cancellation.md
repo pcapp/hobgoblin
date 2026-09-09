@@ -8,20 +8,20 @@
 
 ## Prerequisites
 
-- Stage 02's slow echo is already cancellable; Lab 03 owns session state and the final responder outside ordered dispatch.
+- Stage 02's slow echo is already cancellable; Lab 03 owns session state and the original prompt's final-response obligation in an independent turn task, not the reader/router.
 - Lab 04 has gated permissions, typed tool results, client terminals, and explicit release on normal/error paths.
-- Keep `agent-client-protocol = "=2.1.0"`, protocol v1, schema 1.7.0, with no unstable features.
+- Keep stable ACP v1 with learner-defined Serde DTOs, framing, router, and writer queue; no ACP agent/schema SDK dependencies. Tokio remains allowed.
 - All core tests use fake providers/peers. A separately gated scratch-process test is needed to prove an actual child exits.
 
 ## Concepts and crate choices
 
-Cancellation is a state transition and cleanup protocol. A notification has no responder; the original prompt still has one. Dropping a future only stops polling it: it does not establish that a remote request, spawned task, or operating-system child stopped.
+Cancellation is a state transition and cleanup protocol. A notification has no response ID; the original prompt still has an owned ID and response obligation. Dropping a future only stops polling it: it does not establish that a remote request, spawned task, or operating-system child stopped.
 
-Use a fresh cancellation signal for each active turn, not a reusable session-wide “true” flag. A turn sequence/generation prevents stale completions from clearing the next turn's state. One finalizer owns the prompt responder and the update stream's closing boundary.
+Use a fresh cancellation signal for each active turn, not a reusable session-wide “true” flag. A turn sequence/generation prevents stale completions from clearing the next turn's state. One finalizer owns the prompt's request ID/one-response obligation and the update stream's closing boundary.
 
-Choose either Tokio `watch` or `tokio-util::sync::CancellationToken` as the signal. `tokio-util` 0.7 with its `rt` feature is an optional direct dependency if you choose the token; do not import a transitive dependency implicitly. Tokio `sync`/`time` support channels and timeouts; add `test-util` only for virtual-time tests, and `process`/`io-util` only for a real-child fixture. These are learner manifest decisions, not changes made by this guide.
+Choose either Tokio `watch` or `tokio-util::sync::CancellationToken` as the signal. `tokio-util` 0.7 with its `rt` feature is an optional direct dependency if you choose the token; do not import a transitive dependency implicitly. Tokio `sync`/`time` support channels and timeouts; retain Lab 02's `io-util`/`io-std` transport features, add `test-util` only for virtual-time tests, and `process` for a real-child fixture. These are learner manifest decisions, not changes made by this guide.
 
-Read [cancellation and terminal cleanup](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), [SDK async boundaries](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-sdk.md), [pinned dispatch documentation](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/concepts/ordering/), and [v1 prompt cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation).
+Read [cancellation and terminal cleanup](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md), [learner-owned async boundaries](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md), and canonical [v1 prompt cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation).
 
 ## Diagnose before editing
 
@@ -43,16 +43,16 @@ These source lines describe the pre-course baseline; use the named symbols and t
 
 Create `src/acp/cancel.rs:1` for active-turn control and finalization helpers. Wire it from `src/acp/mod.rs` (or your existing `src/acp.rs` root, not both). Extend the Lab 03 session registry entry with a generation and cancellation handle; keep history in `src/session.rs`.
 
-Use this **application design sketch**, not a Rust SDK API:
+Use this **application design sketch**, not a full Rust implementation:
 
 ```text
-Idle → Running(generation, signal, responder-owner)
+Idle → Running(generation, signal, original-request-ID owner)
 Running → Cancelling → CleaningUp → Finalizing → Idle
 Running → CleaningUp → Finalizing → Idle             [ordinary finish]
 any active state → Disconnected → local cleanup      [no deliverable reply]
 ```
 
-Only the turn task/finalizer consumes the responder. The cancellation notification handler looks up the active generation, signals it, and returns immediately. For unknown/idle sessions, the course policy is a redacted no-op; never reply to this notification or create a session.
+Only the turn task/finalizer consumes the original prompt's response obligation. The cancellation notification route looks up the active generation, signals it, and resumes reading immediately. For unknown/idle sessions, the course policy is a redacted no-op; never reply to this notification or create a session.
 
 **Rationale:** duplicate cancellation should be harmless, and the dispatch task must not wait for cleanup or take a lock held by the turn.
 
@@ -74,21 +74,21 @@ Do not detach a provider worker then assume dropping its join handle stops it. D
 
 ### 3. Resolve permission races without granting authority
 
-In `src/acp/tools.rs`, cancellation must end the permission wait even if a faulty client never sends its required cancelled outcome. Handle both `RequestPermissionOutcome::Cancelled` and the local signal. Keep request bookkeeping bounded according to the pinned SDK request lifecycle; never use a late approval as a new authorization.
+In `src/acp/tools.rs`, cancellation must end the permission wait even if a faulty client never sends its required cancelled outcome. Decode wire `outcome: {"outcome":"cancelled"}` into your own outcome enum and also handle the local signal. Resolve/remove the permission's entry in your bounded pending outbound request map and settle its oneshot exactly once. The router's reply delivery and cancellation cleanup must arbitrate entry ownership: if the reply already won, the turn still checks cancellation before execution. A late reply to a removed ID is ignored/logged, never a new authorization. Do not reuse IDs or leave dropped receivers registered forever.
 
 Immediately before dispatching an approved effect, check the same turn generation and cancellation state. Define the local race rule: cancellation observed before effect dispatch wins; an already dispatched write cannot be promised undone. Report whether an effect was already applied rather than inventing rollback.
 
-**Rationale:** [v1 clients must cancel pending approvals](https://agentclientprotocol.com/protocol/v1/tool-calls#requesting-permission), but an unresponsive peer must not hang the agent indefinitely. Do not confuse baseline `session/cancel` with SDK request-local `$/cancel_request`.
+**Rationale:** [v1 clients must cancel pending approvals](https://agentclientprotocol.com/protocol/v1/tool-calls#requesting-permission), but an unresponsive peer must not hang the agent indefinitely. Baseline `session/cancel` addresses a session's turn; do not substitute a library-specific request-cancellation extension.
 
 ### 4. Clean up resources even if cancellation beats creation
 
 Extend `TerminalLease` in `src/acp/tools.rs`. When a terminal ID is known, cancel the command with `terminal/kill`, collect final output if usable, and `terminal/release`; use bounded waits on every cleanup request. Do not reuse the already-cancelled turn signal to immediately skip cleanup.
 
-Handle the harder race: cancellation while `terminal/create` is in flight. Keep an owner for the eventual create result; a late ID still needs release and must never become a new running tool. Track the cleanup task rather than abandoning the request future and losing the ID.
+Handle the harder race: cancellation while `terminal/create` is in flight. Keep an owner for the eventual create result; a late ID still needs release and must never become a new running tool. Transfer the pending correlation/oneshot receiver to a tracked cleanup task, retaining the same outbound ID and session/generation context. Do not apply the permission path's immediate-entry-removal rule to creation. Give the cleanup registry a finite capacity and deadline, and reserve admission for cleanup RPCs so pending ordinary work cannot starve kill/release. If no ID arrives before the deadline, explicitly report an unresolved remote creation; a bounded timeout does not prove nothing started.
 
 If creation fails before an ID exists, there is nothing to release. If cleanup cannot be acknowledged, record the unresolved resource and fail the acceptance gate; do not claim successful teardown. On peer disconnect, client-terminal release cannot be confirmed over a dead connection—stop local work and report that boundary honestly.
 
-**Rationale:** Rust `Drop` cannot await cleanup. Explicit finalization plus a tracked connection/session supervisor is required for paths where a connection-managed task is dropped. Kill/reap locally owned children independently of ACP transport availability.
+**Rationale:** Rust `Drop` cannot await cleanup. Explicit finalization plus your tracked connection/session supervisor is required for task failure, shutdown, or abort. On EOF/writer failure, stop accepting work, settle pending oneshots, cancel/join turn and cleanup tasks with a bounded fallback, and clear owned registries without claiming delivery on a dead pipe. Kill/reap locally owned children independently of ACP transport availability. Dropping a Tokio join handle detaches work rather than stopping it.
 
 ### 5. Prove process termination, without silently enabling fallback
 
@@ -100,7 +100,7 @@ For an actual shell/descendant executor, killing only the shell is insufficient:
 
 ### 6. Close the update stream, then complete once
 
-In `src/acp/cancel.rs`, have the sole finalizer stop/join event producers, drain permitted final updates, restore valid session history, and send the final response. Serialize the final update/response boundary; do not leave a second task able to write after it. Clear the active generation without letting old cleanup erase a newer turn.
+In `src/acp/cancel.rs`, have the sole finalizer stop/join event producers, drain permitted final updates, restore valid session history, and enqueue the final response with the original request ID. Use the serialized bounded writer queue for every update and response; do not leave a second producer able to enqueue after the final boundary. Track write/flush failure separately from successful enqueue and propagate disconnect honestly. Clear the active generation without letting old cleanup erase a newer turn.
 
 The following is an **illustrative wire pair**, grounded in [v1 cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation), not a captured trace. Prompt ID 30 was already outstanding; the notification has no ID:
 
@@ -112,7 +112,7 @@ The following is an **illustrative wire pair**, grounded in [v1 cancellation](ht
 {"jsonrpc":"2.0","id":30,"result":{"stopReason":"cancelled"}}
 ```
 
-The typed final payload is `PromptResponse::new(StopReason::Cancelled)` from [SDK 2.1.0](https://docs.rs/agent-client-protocol/2.1.0/agent_client_protocol/schema/v1/struct.PromptResponse.html#method.new), sent only after work is aborted and pending updates are settled. Do not fabricate an acknowledgement on the cancel notification.
+Define your own final-result DTO whose serialized field is `stopReason` and whose cancellation value is `cancelled`. Send it only after work is aborted and pending updates are settled, using ID 30 from the original prompt. Do not fabricate an acknowledgement on the cancel notification. If remote cleanup cannot be confirmed, report that limitation and fail the cleanup gate rather than presenting an unqualified successful teardown.
 
 **Rationale:** `cancelled` is a normal prompt outcome, not an internal error. A cancellation arriving after completion must not rewrite that completed response. Define a single commit point for completion-vs-cancel races and test both orders.
 
@@ -129,6 +129,7 @@ Put lifecycle tests under `#[cfg(test)]` in `src/acp/cancel.rs`; use `src/acp/te
 - **`acp_stage05_disconnect_and_cleanup_failure`** — Arrange disconnect during work, then separately a peer that times out on release. Act through teardown. Assert local tasks are stopped, no fabricated delivered reply/release success, and unresolved client cleanup is explicitly reported.
 - **`acp_stage05_cancel_one_session_only`** — Arrange gated A and B. Act by cancelling A and completing B. Assert A cancelled, B normal, independent histories, and independent cleanup registries.
 - **`acp_stage05_real_child_is_reaped`** — Arrange the controlled single-child terminal fixture and await its readiness signal. Act by cancelling its turn. Assert the owned child handle reports exit/reap, no later output arrives, the terminal is released, and the next turn works. Assert the handle, not just a potentially reused PID.
+- **`acp_stage05_cancel_with_saturated_pending_map`** — Arrange ordinary outbound requests at their configured capacity and an active terminal. Act with cancel. Assert the router remains responsive, permission waiters settle, bounded cleanup admission allows kill/release, late approvals do nothing, and all owned entries are removed or explicitly reported unresolved by the cleanup deadline.
 
 Add a bounded watchdog around every test. Prefer barriers/oneshot channels; use virtual time only for timeout policy, not to prove real OS scheduling. Record the expected cleanup order in the event log, not elapsed-time guesses.
 
@@ -156,4 +157,4 @@ Draw the task that reads cancel while the provider waits. Explain the difference
 
 Record actual commands/results and limitations in [progress](progress.md) during review. A responsive spinner alone is not proof of cancellation or learner mastery.
 
-**Snippet status:** state/control-flow blocks are design sketches. Both JSON payloads deserialize into the pinned SDK cancellation-notification/prompt-response types in an isolated crate; they are not captured traffic. No cancellation implementation, real process fixture, or Zed cancellation test was run.
+**Snippet status:** state/control-flow blocks are design sketches and the JSON pair follows canonical v1 cancellation, not captured traffic. Historical SDK deserialization checks are superseded; they do not validate your DTOs/correlation/cleanup. No revised cancellation implementation, real process fixture, or Zed cancellation test was compiled/run during this documentation revision.
