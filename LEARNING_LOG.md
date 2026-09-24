@@ -236,7 +236,7 @@ The original one-liner didn't bind because it wasn't specific.
 - [Project course](guides/acp/README.md): handwritten ACP protocol lessons and source-specific integration seams. No ACP agent SDK; Serde and Tokio are allowed.
 - [Progress ledger](guides/acp/progress.md): learner explanations, review feedback and evidence states; authoritative current progress lives there.
 - Reusable reference: `/Users/peter/knowledge-bundles/harness-engineering/`, extended rather than duplicated.
-- Start with [Lab 00 — One agent, two frontends](guides/acp/00-architecture.md), complete the [source-inspection worksheet](guides/acp/00-inspect.md), then build the [Lab 01 handshake](guides/acp/01-handshake.md). The previously compiled handshake used the superseded SDK approach and does not validate this replacement. No ACP adapter has been added to this project's source.
+- Start with [Task 1 — Extract a reusable agent core](guides/acp/01-shared-core.md), continue with the [interactive multi-turn CLI](guides/acp/02-interactive-cli.md), then add [ACP initialization to the real application](guides/acp/03-acp-initialize.md). No ACP adapter has been added to this project's source yet.
 
 ## Open threads
 

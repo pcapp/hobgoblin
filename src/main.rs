@@ -4,13 +4,17 @@ mod wire;
 
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
-use std::{env, process};
+use std::{
+    env,
+    io::{self, Write},
+    process,
+};
 
 #[derive(Parser)]
 #[command(author, version, about)]
 struct Args {
     #[arg(short = 'p', long)]
-    prompt: String,
+    prompt: Option<String>,
 }
 
 #[tokio::main]
@@ -41,5 +45,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
-    agent::run(&client, args.prompt).await
+    // Single-shot prompt
+    if let Some(prompt) = args.prompt {
+        return agent::run(&client, prompt).await;
+    }
+
+    // Multi-turn
+    let mut input = String::new();
+    loop {
+        print!("> ");
+        io::stdout().flush()?;
+        input.clear();
+
+        io::stdin().read_line(&mut input)?;
+        let prompt = input.trim_end();
+
+        if prompt == "/quit" {
+            break;
+        }
+    }
+
+    Ok(())
 }

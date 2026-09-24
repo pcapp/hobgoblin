@@ -11,4 +11,11 @@ target/
 
 .env
 trace.jsonl
+
+# Editor workspace settings
 .idea/
+.obsidian/
+
+# Python caches
+__pycache__/
+*.py[cod]

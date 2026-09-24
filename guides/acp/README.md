@@ -1,83 +1,54 @@
-# Learn ACP by connecting this Rust agent to Zed
+# Grow this Rust agent into an ACP agent
 
-> **Scope:** teach and verify; Peter writes the Rust. The current program is not yet an ACP agent.
-> **Target:** local Zed over stdio, stable ACP v1, with a protocol implementation you write yourself. Serde and Tokio are allowed; no ACP agent SDK or external ACP schema crate.
-> **Start here:** [Lab 00 — One agent, two frontends](00-architecture.md), then its [source-inspection worksheet](00-inspect.md) and [Lab 01 — Build an ACP handshake](01-handshake.md).
+This course changes the existing application directly. There is no separate example agent and no throwaway protocol implementation.
 
-## What you are building
-
-Keep the existing CLI and add a protocol adapter around the agent, not around its terminal output. Zed supplies user prompts and displays updates; your agent still owns model calls, history, tool policy, and execution. A turn can contain several model requests; a session contains several turns.
+You will evolve one shared agent core that can support three frontends:
 
 ```text
-CLI input ──→ CLI adapter ─┐
-                          ├─→ session / turn logic ─→ provider and tools
-Zed ⇄ stdio ⇄ ACP adapter ─┘           │
-                          adapters ←── application events and outcomes
+                         shared agent core
+                    conversation + model/tool loop
+                         /       |       \
+                        /        |        \
+             one-shot `-p`   interactive   ACP over stdio
 ```
 
-**Proposed design, not current code:** the turn logic emits typed application events; adapters choose how to present them. CLI can print an answer. ACP serializes a message update and finally a prompt response. Do not make provider/tool code know Zed UI details.
+The core owns agent behavior. Each frontend owns its input and presentation:
 
-## Reference shelf
+- `-p "prompt"` performs one turn and exits.
+- Running without arguments starts a multi-turn terminal conversation.
+- `--acp` lets an ACP client drive the same application.
 
-The shared reference lives outside this repo in the existing OKF wiki, not in a duplicate course wiki:
+## Working agreement
 
-- [ACP mental model](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-mental-model.md)
-- [API map and annotated JSON exchange](file:///Users/peter/knowledge-bundles/harness-engineering/protocols/acp-api-map.md)
-- [Handwritten Rust framing, dispatch and async ownership](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-rust-protocol.md)
-- [Permissions, tools, and cancellation](file:///Users/peter/knowledge-bundles/harness-engineering/concepts/acp-tools-and-cancellation.md)
-- [Teaching and evidence policy](file:///Users/peter/knowledge-bundles/harness-engineering/workflows/acp-learning.md)
-- [Obsidian now, Starlight later](file:///Users/peter/knowledge-bundles/harness-engineering/references/acp-wiki-viewing.md)
+- You design and write the Rust.
+- Each task has a concrete end state and a way to validate it.
+- Concepts and constraints are explained when they become relevant, rather than in a separate architecture lesson.
+- The course does not require test-driven development, but every task ends with deterministic automated acceptance checks.
+- ACP is implemented with the project's normal Rust tools, including Serde and Tokio. Do not use an ACP SDK or an external ACP schema crate.
+- Keep provider API types separate from ACP wire types.
 
-If your editor blocks `file:` links, open `/Users/peter/knowledge-bundles/harness-engineering/` as an Obsidian vault. The wiki itself uses relative Markdown links.
+## Current task sequence
 
-## Where this project stands
+1. [Extract a reusable agent core](01-shared-core.md)
+2. [Add an interactive multi-turn terminal](02-interactive-cli.md)
+3. [Add ACP initialization to the application](03-acp-initialize.md)
 
-Source locations were checked when this guide was created. Re-find symbols after edits rather than trusting stale line numbers.
+These tasks stop at initialization. Session creation, ACP prompts, tool reporting, permissions, and cancellation will be designed after the code has evolved through these first changes.
 
-| Existing code | Why it matters for ACP | Future learning change |
-|---|---|---|
-| `src/main.rs:11–14` required `prompt` | Zed launches a long-lived process, not one `-p` invocation | Separate CLI input from ACP startup |
-| `src/main.rs:18–24` stderr tracing | Already compatible with protocol-only stdout | Preserve this, redact payload logging |
-| `src/main.rs:28–44` provider setup | Echo/handshake need no API key; launch cwd may differ | Keep protocol setup independent from provider auth |
-| `src/agent.rs:7–15` `run` and local history | Repeated calls lose conversational state | Let a session own history across turns |
-| `src/agent.rs:31` awaited provider call | Whole-response provider API, not token streaming | A single ACP text chunk is a valid first bridge; token streaming is a separate improvement |
-| `src/agent.rs:39–50` malformed/no-choice returns | Errors currently return `Ok(())` | Use explicit domain errors and map them deliberately |
-| `src/agent.rs:59–64` `println!` | Raw answer is invalid ACP stdout | Emit a domain event or return structured output |
-| `src/agent.rs:66–77` synchronous tools | No UI progress, approval, or cancellation boundary | Introduce a tool-execution boundary before exposing it to Zed |
-| `src/agent.rs:81–86` loop exhaustion | Returns success without a meaningful turn outcome | Distinguish `max_turn_requests` |
-| `src/tools.rs:73,96` local disk I/O | Does not reflect unsaved editor buffers | Evaluate client filesystem delegation |
-| `src/tools.rs:120–137` blocking process output | No exit-success check; JSON byte arrays; no session cwd | Design exit-aware, cancellable execution and deliberate text conversion |
-| `src/wire.rs:4–29` provider DTOs | These are not ACP messages | Keep provider decoding types separate from your own ACP wire types |
+See [the roadmap](milestones.md) for the goals and boundaries of the current sequence. Record completed work in [progress.md](progress.md).
 
-## Development milestones and step-by-step guides
+## Target architecture
 
-Start with the [milestone roadmap](milestones.md): outputs, learning objectives, test layers, review procedure and the first small finish line.
+`src/main.rs` chooses a frontend at startup. The frontend creates or locates conversation state and asks the shared core to perform a turn. The core must not know whether its caller is a terminal or an ACP client.
 
-- [00 — One agent, two frontends](00-architecture.md): shared turn engine, interactive versus one-shot loops, session ownership, events, tool execution, and the first refactor plan.
-  - [Source-inspection worksheet](00-inspect.md): apply the architecture to the current code.
-- [01 — Implement initialization yourself](01-handshake.md): newline framing, envelope validation, method dispatch and correlated responses; supplied no-key verification script.
-- [02 — Start in ACP mode and echo into Zed](02-echo.md): CLI routing, session state, update ordering and early cancellation.
-- [03 — Connect session-owned turn logic](03-turn-engine.md): provider fakes, explicit outcomes and CLI preservation.
-- [04 — Expose tools safely](04-tools.md): permission, capability, workspace and execution tests.
-- [05 — Cancel under load](05-cancellation.md): provider/approval/process cleanup and race tests.
-- [06 — Verify the supported profile](06-compatibility.md): baseline resource links, stdio MCP and Zed acceptance evidence.
+Do not create modules merely to match a diagram. Add a boundary when a task gives it a concrete responsibility.
 
-Each lesson separates concepts, files/actions, small design examples, tests you write and the review gate. Later paths are proposed design targets; re-read actual code before applying changes. Rust test targets described in lessons are assignments, not already implemented tests. Hermes supplies guidance and review tooling, not application Rust. You own ACP framing, dispatch, request correlation, wire types, and agent behavior throughout; later lessons do not switch back to an agent SDK.
+## Validation philosophy
 
-Historical `validation.json`, `handshake-validation.json` and `milestone-validation.json` record checks of the superseded SDK-based material. They are retained as history, not evidence that the handwritten replacement works.
+A successful build proves that the Rust types fit together; it does not prove behavior. Completion is based only on commands an assistant or CI process can run:
 
-## Zed setup: only after session/prompt works
+- Deterministic Rust tests with scripted dependencies for core and terminal behavior.
+- Compile, formatting, and regression commands.
+- A subprocess wire checker for ACP initialization.
 
-Zed's documented path is Agent Settings → External Agents → Add Agent → Add Custom Agent. It creates an `agent_servers` entry. Use the absolute path to your built executable and arguments matching your implementation; do not point Zed at today's CLI and expect ACP.
-
-For a standalone example, build it with `cargo build --locked --example acp_handshake` and configure the resulting absolute executable path **only after** you extend it beyond the handshake. The future integrated binary may instead use an explicit `--acp` mode; no such flag exists today.
-
-Use Command Palette → `dev: open acp logs` to inspect traffic. The installed Zed version at guide creation was **1.17.2**; actual wire interoperability has not been tested. GUI processes may not inherit shell environment setup. Keep provider credentials out of versioned Zed examples and out of ACP logs.
-
-Source: [Zed External Agents](https://zed.dev/docs/ai/external-agents).
-
-## How we record learning
-
-Use [progress.md](progress.md). Explain the mechanism, attempt the exercise, then ask Hermes to verify. A passing assistant-run build is a baseline observation, not evidence that you have mastered the concept. At session end, record one mechanism learned, one piece of evidence, and the next open question.
-
-**Suggested next message:** “Start Lab 00. Help me map the current code to the shared core and its frontends.”
+Live model behavior, manual terminal interaction, and written explanations are not completion evidence.
