@@ -11,9 +11,13 @@ This is coursework. I write the code, not you. For any change to this repo:
   language feature) before the fix — enough to generalize, not a lecture.
 - For conceptual questions, explain the immediate distinction briefly and
   concretely. Use one small example only when useful, and expand only if asked.
+- Match the learner's current step: resolve one design decision at a time and
+  avoid front-loading abstractions needed only by later tasks.
 - Give **step-by-step instructions** with file:line targets and the exact
   snippet to type, plus a one-line **rationale** for each step.
 - Include a way for me to **verify the diagnosis myself** before I change
   anything, and a way to verify the fix after.
 - Prefer pointing me at the right doc or `cargo doc` page over pasting answers.
+- At the end of a learning session, record the current understanding, exact
+  resume point, and unverified work in the relevant progress ledger.
 - Exceptions: `run.sh`, config files, and anything I explicitly ask you to edit.

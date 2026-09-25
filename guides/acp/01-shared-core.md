@@ -36,6 +36,20 @@ frontend presents the answer
 
 You choose the concrete types and function names. A dedicated session struct is a natural option, but the task does not prescribe its final shape.
 
+### Conversation is narrower than session
+
+A conversation is the ordered message history visible to the model. A session is usually broader: it may later add an ID, working directory, configuration, lifecycle, or persistence. This task only needs conversation state, so a concrete wrapper is enough:
+
+```rust
+pub struct Conversation {
+    messages: Vec<Value>,
+}
+```
+
+`Vec` preserves message order, and `serde_json::Value` keeps the existing provider-formatted messages without redesigning the wire types. The frontend owns each `Conversation` value even if the type is defined in the agent module; one turn receives `&mut Conversation` and updates it. A session trait is unnecessary until there is genuinely interchangeable session behavior. If persistence is added later, the useful abstraction is more likely a session store.
+
+Each new request sends the retained messages, which is how the model sees earlier turns. Context-limit handling is a separate later policy: this task does not need token counting, truncation, or summarization.
+
 ### Returning data separates behavior from presentation
 
 Printing is an effect chosen for a human terminal. Returning an answer lets each caller decide what to do with it:
