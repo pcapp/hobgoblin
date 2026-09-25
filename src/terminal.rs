@@ -1,18 +1,21 @@
 use std::io::{self, Write};
 
-use crate::agent;
+use crate::agent::{self, Conversation};
 use async_openai::{Client, config::OpenAIConfig};
 
 pub async fn run_once(
     client: &Client<OpenAIConfig>,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    agent::run(&client, prompt).await
+    let mut conversation = Conversation::default();
+    agent::turn(&client, &mut conversation, prompt).await
 }
 
 pub async fn run_interactive(
-    _client: &Client<OpenAIConfig>,
+    client: &Client<OpenAIConfig>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut conversation = Conversation::default();
+
     let mut input = String::new();
     loop {
         print!("> ");
@@ -25,6 +28,8 @@ pub async fn run_interactive(
         if prompt == "/quit" {
             break;
         }
+
+        agent::turn(&client, &mut conversation, prompt).await?;
     }
 
     Ok(())

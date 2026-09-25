@@ -4,27 +4,34 @@ use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use serde_json::{Value, json};
 
-pub async fn run(
+#[derive(Debug, Default)]
+pub struct Conversation {
+    messages: Vec<Value>,
+}
+
+pub async fn turn(
     client: &Client<OpenAIConfig>,
+    conversation: &mut Conversation,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tools = specs();
-    let mut messages: Vec<Value> = vec![json!({
+    conversation.messages.push(json!({
         "role": "user",
         "content": &prompt.to_string(),
-    })];
+    }));
+
     const MAX_LOOPS: u8 = 10;
 
     for _ in 0..MAX_LOOPS {
         let request = json!({
-            "messages": messages,
+            "messages": conversation.messages,
             "model": "anthropic/claude-haiku-4.5",
             "tools": tools,
         });
 
         tracing::debug!(
           event = "llm_request",
-          n_messages = messages.len(),
+          n_messages = conversation.messages.len(),
           payload = %request,
         );
 
@@ -52,7 +59,7 @@ pub async fn run(
 
         let message = &choice.message;
 
-        messages.push(raw_message);
+        conversation.messages.push(raw_message);
 
         let tool_calls = message.tool_calls.as_deref().unwrap_or_default();
 
@@ -70,7 +77,7 @@ pub async fn run(
                 eprintln!("Tool call error: {}", error);
             }
 
-            messages.push(json!({
+            conversation.messages.push(json!({
               "role": "tool",
               "tool_call_id": tool_call.id,
               "content": result.to_string()

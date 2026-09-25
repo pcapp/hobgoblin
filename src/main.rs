@@ -5,6 +5,7 @@ mod wire;
 
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
+use serde_json::Value;
 use std::{env, process};
 
 #[derive(Parser)]
