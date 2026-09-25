@@ -1,14 +1,11 @@
 mod agent;
+mod terminal;
 mod tools;
 mod wire;
 
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
-use std::{
-    env,
-    io::{self, Write},
-    process,
-};
+use std::{env, process};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -45,25 +42,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
-    // Single-shot prompt
-    if let Some(prompt) = args.prompt {
-        return agent::run(&client, prompt).await;
-    }
-
-    // Multi-turn
-    let mut input = String::new();
-    loop {
-        print!("> ");
-        io::stdout().flush()?;
-        input.clear();
-
-        io::stdin().read_line(&mut input)?;
-        let prompt = input.trim_end();
-
-        if prompt == "/quit" {
-            break;
-        }
-    }
-
-    Ok(())
+    return match args.prompt {
+        Some(prompt) => terminal::run_once(&client, &prompt.as_str()).await,
+        None => terminal::run_interactive(&client).await,
+    };
 }

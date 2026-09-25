@@ -6,12 +6,12 @@ use serde_json::{Value, json};
 
 pub async fn run(
     client: &Client<OpenAIConfig>,
-    prompt: String,
+    prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tools = specs();
     let mut messages: Vec<Value> = vec![json!({
         "role": "user",
-        "content": prompt,
+        "content": &prompt.to_string(),
     })];
     const MAX_LOOPS: u8 = 10;
 
