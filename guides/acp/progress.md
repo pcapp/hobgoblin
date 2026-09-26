@@ -53,6 +53,18 @@ Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete
 
 No Task 1 completion evidence has been recorded. The current implementation remains unverified against the task's behavioral acceptance criteria.
 
+## Next-session Rust cleanup checklist
+
+Work in order and keep each change small:
+
+- [ ] **1. Start warning-free.** Remove the unused `serde_json::Value` import from `src/main.rs`, then run `cargo check --locked`. Do not mix other cleanup into this step.
+- [ ] **2. Establish the core state boundary.** Define a concrete `Conversation` with private messages in the agent core, rename `run` to a one-turn operation, and pass it `&mut Conversation`.
+- [ ] **3. Separate behavior from presentation.** Make the turn operation return its final text; let `terminal.rs` own stdin, prompts, `/quit`, stdout, and the lifetime of each conversation.
+- [ ] **4. Add only the test seams Task 1 requires.** Introduce a narrow model/provider abstraction for a scripted model and a writable output boundary for the one-shot frontend. Avoid general-purpose traits without a second implementation.
+- [ ] **5. Prove behavior before reorganizing modules.** Add the four Task 1 tests and run its acceptance commands. Keep the current flat `main`, `terminal`, `agent`, `tools`, and `wire` modules unless completed behavior reveals a specific reason to add folders or `lib.rs`.
+
+Rust principles practiced here: model state with a struct, preserve invariants with private fields, express temporary mutation with `&mut`, return data instead of performing caller-specific effects, and introduce traits at boundaries where behavior actually varies.
+
 ## Validation record
 
 Add one structured entry after validation:

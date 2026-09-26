@@ -13,7 +13,7 @@ pub async fn turn(
     client: &Client<OpenAIConfig>,
     conversation: &mut Conversation,
     prompt: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let tools = specs();
     conversation.messages.push(json!({
         "role": "user",
@@ -43,18 +43,10 @@ pub async fn turn(
 
         let raw_message = response["choices"][0]["message"].clone();
 
-        let response = match serde_json::from_value::<ChatResponse>(response) {
-            Ok(parsed_response) => parsed_response,
-            Err(err) => {
-                eprintln!("Received a malformed OpenRouter response.");
-                eprintln!("Error: {}", err);
-                return Ok(());
-            }
-        };
+        let response = serde_json::from_value::<ChatResponse>(response)?;
 
         let Some(choice) = response.choices.first() else {
-            eprintln!("No choices returned!");
-            return Ok(());
+            return Err(std::io::Error::other("Model returned no choices.").into());
         };
 
         let message = &choice.message;
@@ -64,10 +56,10 @@ pub async fn turn(
         let tool_calls = message.tool_calls.as_deref().unwrap_or_default();
 
         if tool_calls.is_empty() {
-            if let Some(content) = &message.content {
-                println!("{}", content);
-            }
-            return Ok(());
+            return match &message.content {
+                Some(content) => Ok(content.clone()),
+                None => Err(std::io::Error::other("Model completed without assistant text").into()),
+            };
         }
 
         for tool_call in tool_calls {
@@ -85,10 +77,9 @@ pub async fn turn(
         }
     }
 
-    eprintln!(
+    Err(std::io::Error::other(format!(
         "The agentic loop exceeded the max iterations ({}).",
         MAX_LOOPS,
-    );
-
-    Ok(())
+    ))
+    .into())
 }

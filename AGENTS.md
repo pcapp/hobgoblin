@@ -13,6 +13,8 @@ This is coursework. I write the code, not you. For any change to this repo:
   concretely. Use one small example only when useful, and expand only if asked.
 - Match the learner's current step: resolve one design decision at a time and
   avoid front-loading abstractions needed only by later tasks.
+- Assume beginner-level Rust knowledge: introduce one unfamiliar language
+  feature at a time and explain what its syntax does where it first appears.
 - Give **step-by-step instructions** with file:line targets and the exact
   snippet to type, plus a one-line **rationale** for each step.
 - Include a way for me to **verify the diagnosis myself** before I change

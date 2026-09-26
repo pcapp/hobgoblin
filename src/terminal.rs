@@ -8,7 +8,9 @@ pub async fn run_once(
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut conversation = Conversation::default();
-    agent::turn(&client, &mut conversation, prompt).await
+    let response = agent::turn(client, &mut conversation, prompt).await?;
+    println!("{response}");
+    Ok(())
 }
 
 pub async fn run_interactive(
@@ -29,7 +31,8 @@ pub async fn run_interactive(
             break;
         }
 
-        agent::turn(&client, &mut conversation, prompt).await?;
+        let response = agent::turn(client, &mut conversation, prompt).await?;
+        println!("{response}");
     }
 
     Ok(())
