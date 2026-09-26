@@ -9,8 +9,18 @@ pub struct Conversation {
     messages: Vec<Value>,
 }
 
-pub async fn turn(
-    client: &Client<OpenAIConfig>,
+pub(crate) trait Model {
+    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>>;
+}
+
+impl Model for Client<OpenAIConfig> {
+    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+        Ok(self.chat().create_byot(request).await?)
+    }
+}
+
+pub async fn turn<M: Model>(
+    client: &M,
     conversation: &mut Conversation,
     prompt: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -35,7 +45,7 @@ pub async fn turn(
           payload = %request,
         );
 
-        let response: Value = client.chat().create_byot(request).await?;
+        let response: Value = client.complete(request).await?;
         tracing::debug!(
           event = "llm_response",
           payload = %response,
@@ -82,4 +92,115 @@ pub async fn turn(
         MAX_LOOPS,
     ))
     .into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use super::*;
+    use std::sync::Mutex;
+
+    struct ScriptedModel {
+        responses: Mutex<VecDeque<Value>>,
+        requests: Mutex<Vec<Value>>,
+    }
+
+    impl ScriptedModel {
+        fn new(responses: impl IntoIterator<Item = Value>) -> Self {
+            Self {
+                responses: Mutex::new(responses.into_iter().collect()),
+                requests: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl Model for ScriptedModel {
+        async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+            self.requests.lock().unwrap().push(request);
+
+            self.responses
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| std::io::Error::other("Scripted model ran out of responses").into())
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_turn_returns_assistant_text() {
+        let model = ScriptedModel::new([json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "scripted answer",
+                    "tool_calls": null
+                }
+            }]
+        })]);
+
+        let mut conversation = Conversation::default();
+
+        let answer = turn(&model, &mut conversation, "Hello, world!")
+            .await
+            .expect("turn should succeed");
+
+        assert_eq!(answer, "scripted answer");
+    }
+
+    #[tokio::test]
+    async fn second_turn_includes_first_turn_history() {
+        let model = ScriptedModel::new([
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "first answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "second answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+        ]);
+
+        let mut conversation = Conversation::default();
+
+        turn(&model, &mut conversation, "first question")
+            .await
+            .expect("first turn should succeed");
+
+        turn(&model, &mut conversation, "second question")
+            .await
+            .expect("second turn should succeed");
+
+        let requests = model.requests.lock().unwrap();
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[1]["messages"],
+            json!([
+                {
+                    "role": "user",
+                    "content": "first question"
+                },
+                {
+                    "role": "assistant",
+                    "content": "first answer",
+                    "tool_calls": null
+                },
+                {
+                    "role": "user",
+                    "content": "second question"
+                }
+            ])
+        );
+    }
 }
