@@ -203,4 +203,57 @@ mod tests {
             ])
         );
     }
+
+    #[tokio::test]
+    async fn separate_conversations_do_not_share_messages() {
+        let model = ScriptedModel::new([
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "first answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+            json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "second answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+        ]);
+
+        let mut first_conversation = Conversation::default();
+        let mut second_conversation = Conversation::default();
+
+        turn(&model, &mut first_conversation, "first question")
+            .await
+            .expect("first conversation should succeed");
+
+        turn(&model, &mut second_conversation, "second question")
+            .await
+            .expect("second conversation should succeed");
+
+        let requests = model.requests.lock().unwrap();
+
+        assert_eq!(
+            requests[0]["messages"],
+            json!([{
+                "role": "user",
+                "content": "first question"
+            }])
+        );
+
+        assert_eq!(
+            requests[1]["messages"],
+            json!([{
+                "role": "user",
+                "content": "second question"
+            }])
+        );
+    }
 }

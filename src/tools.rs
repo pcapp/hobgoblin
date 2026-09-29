@@ -120,13 +120,14 @@ fn run_bash_tool(arguments: &str) -> Value {
     let output = match std::process::Command::new("bash")
         .arg("-c")
         .arg(&args.command)
-        .output() {
+        .output()
+    {
         Ok(output) => output,
         Err(err) => {
             return json!({
                 "ok": false,
                 "error": format!("Could run the command successfully. {}", err)
-            })
+            });
         }
     };
 
