@@ -1,3 +1,4 @@
+[![CI](https://github.com/pcapp/hobgoblin/actions/workflows/ci.yml/badge.svg)](https://github.com/pcapp/hobgoblin/actions/workflows/ci.yml)
 [![progress-banner](https://backend.codecrafters.io/progress/claude-code/cda00cef-5ce1-46e8-933b-118b8a8fc378)](https://app.codecrafters.io/users/pcapp?r=2qF)
 
 This is a starting point for Rust solutions to the
