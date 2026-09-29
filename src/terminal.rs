@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, BufRead, Write};
 
 use crate::agent::{self, Conversation};
 use async_openai::{Client, config::OpenAIConfig};
@@ -14,21 +14,31 @@ pub async fn run_once<M: agent::Model, W: Write>(
     Ok(())
 }
 
-pub async fn run_interactive(
+pub async fn run_interactive<R: BufRead>(
     client: &Client<OpenAIConfig>,
+    reader: &mut R,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut conversation = Conversation::default();
 
-    let mut input = String::new();
+    let mut user_input = String::new();
     loop {
         print!("> ");
         io::stdout().flush()?;
-        input.clear();
+        user_input.clear();
 
-        io::stdin().read_line(&mut input)?;
-        let prompt = input.trim_end();
+        let bytes_read = reader.read_line(&mut user_input)?;
 
-        if prompt == "/quit" {
+        if bytes_read == 0 {
+            break;
+        }
+
+        let prompt = user_input.trim();
+
+        if prompt.is_empty() {
+            continue;
+        }
+
+        if prompt == "/quit" || prompt == "/exit" {
             break;
         }
 
