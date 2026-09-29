@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Write};
+use std::io::{BufRead, Write};
 
 use crate::agent::{self, Conversation};
 
@@ -13,16 +13,19 @@ pub async fn run_once<M: agent::Model, W: Write>(
     Ok(())
 }
 
-pub async fn run_interactive<M: agent::Model, R: BufRead>(
+const PROMPT: &str = "> ";
+
+pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write>(
     client: &M,
     reader: &mut R,
+    writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut conversation = Conversation::default();
 
     let mut user_input = String::new();
     loop {
-        print!("> ");
-        io::stdout().flush()?;
+        write!(writer, "{PROMPT}")?;
+        writer.flush()?;
         user_input.clear();
 
         let bytes_read = reader.read_line(&mut user_input)?;
@@ -42,7 +45,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead>(
         }
 
         let response = agent::turn(client, &mut conversation, prompt).await?;
-        println!("{response}");
+        writeln!(writer, "{response}")?;
     }
 
     Ok(())
@@ -54,7 +57,10 @@ mod tests {
 
     use serde_json::{Value, json};
 
-    use crate::{agent, terminal::run_interactive, terminal::run_once};
+    use crate::{
+        agent,
+        terminal::{run_interactive, run_once},
+    };
 
     struct ScriptedModel {
         response: Value,
@@ -107,10 +113,13 @@ mod tests {
     async fn run_interactive_stops_on_eof() {
         let mut input = Cursor::new(b"");
         let model = ScriptedModel::new(json!("not used"));
+        let mut output = Vec::new();
 
-        let _: () = run_interactive(&model, &mut input)
+        let _: () = run_interactive(&model, &mut input, &mut output)
             .await
             .expect("EOF should end the interactive session successfully.");
+
+        assert_eq!(String::from_utf8(output).unwrap(), "> ");
 
         assert_eq!(model.requests.lock().unwrap().len(), 0);
     }

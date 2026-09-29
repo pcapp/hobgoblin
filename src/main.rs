@@ -5,7 +5,11 @@ mod wire;
 
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
-use std::{env, io::stdin, process};
+use std::{
+    env,
+    io::{stdin, stdout},
+    process,
+};
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -49,7 +53,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         None => {
             let mut reader = stdin().lock();
-            terminal::run_interactive(&client, &mut reader).await
+            let mut writer = stdout().lock();
+            terminal::run_interactive(&client, &mut reader, &mut writer).await
         }
     };
 }
