@@ -1,7 +1,6 @@
 use std::io::{self, BufRead, Write};
 
 use crate::agent::{self, Conversation};
-use async_openai::{Client, config::OpenAIConfig};
 
 pub async fn run_once<M: agent::Model, W: Write>(
     client: &M,
@@ -14,8 +13,8 @@ pub async fn run_once<M: agent::Model, W: Write>(
     Ok(())
 }
 
-pub async fn run_interactive<R: BufRead>(
-    client: &Client<OpenAIConfig>,
+pub async fn run_interactive<M: agent::Model, R: BufRead>(
+    client: &M,
     reader: &mut R,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut conversation = Conversation::default();
@@ -51,11 +50,11 @@ pub async fn run_interactive<R: BufRead>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::{io::Cursor, sync::Mutex};
 
     use serde_json::{Value, json};
 
-    use crate::{agent, terminal::run_once};
+    use crate::{agent, terminal::run_interactive, terminal::run_once};
 
     struct ScriptedModel {
         response: Value,
@@ -102,5 +101,17 @@ mod tests {
             String::from_utf8(output).expect("output should be UTF-8"),
             "scripted answer\n"
         );
+    }
+
+    #[tokio::test]
+    async fn run_interactive_stops_on_eof() {
+        let mut input = Cursor::new(b"");
+        let model = ScriptedModel::new(json!("not used"));
+
+        let _: () = run_interactive(&model, &mut input)
+            .await
+            .expect("EOF should end the interactive session successfully.");
+
+        assert_eq!(model.requests.lock().unwrap().len(), 0);
     }
 }
