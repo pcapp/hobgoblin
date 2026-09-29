@@ -43,7 +43,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::with_config(config);
 
     return match args.prompt {
-        Some(prompt) => terminal::run_once(&client, &prompt.as_str()).await,
+        Some(prompt) => {
+            let mut stdout = std::io::stdout();
+            terminal::run_once(&client, &mut stdout, prompt.as_str()).await
+        }
         None => terminal::run_interactive(&client).await,
     };
 }

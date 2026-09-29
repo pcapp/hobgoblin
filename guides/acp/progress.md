@@ -18,66 +18,52 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 
 | Task | Status | Goal | Evidence |
 |---|---|---|---|
-| [1 — Shared core](01-shared-core.md) | in progress | Caller-owned history; returned answer; `-p` preserved | Design explored; implementation and acceptance tests not complete |
+| [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | not started | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | — |
 | [3 — ACP initialize](03-acp-initialize.md) | not started | Real binary completes ACP initialization through Tokio stdio | — |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
-## Session checkpoint — 2026-09-24
+## Session checkpoint — 2026-09-29
 
 ### Current understanding
 
-- `agent::run` currently retains messages only during one model/tool loop; its local vector is dropped when the call returns.
-- A conversation is the ordered model-visible message history. A session may later include identity, configuration, lifecycle, and persistence.
-- A concrete `Conversation { messages: Vec<Value> }` is sufficient now. `Vec` preserves order, while `Value` preserves the existing provider JSON representation.
-- The terminal frontend should own each conversation value. The agent core should perform one turn by borrowing it as `&mut Conversation`.
-- The terminal owns stdin, prompts, `/quit`, and answer printing. The agent core should neither read stdin nor print user-facing output.
-- Retained messages let the next request see prior answers. Context-window management for very long histories is a separate later concern.
+- `Conversation` owns the ordered provider-visible message history and keeps its messages private.
+- The terminal frontend owns each conversation; `agent::turn` temporarily borrows it as `&mut Conversation` and retains user, assistant, and tool messages.
+- `agent::turn` returns final assistant text rather than printing it, allowing each frontend to choose its presentation mechanism.
+- `terminal::run_once` accepts a `Write` output boundary, so production can use stdout while tests use an in-memory `Vec<u8>`.
+- A small `Model` trait allows deterministic scripted tests without network requests or credentials.
 
 ### Source checkpoint
 
-- `src/terminal.rs` exists with one-shot and interactive entry points and an input-loop scaffold.
-- `Conversation` is currently defined in `terminal.rs`, but it is not passed to the agent.
-- `src/agent.rs::run` still creates its own `Vec<Value>` and prints the final answer.
-- The interactive loop is ahead of Task 1; finish the shared turn boundary before extending it.
+- Task 1 is complete and verified.
+- `src/agent.rs` contains the caller-owned conversation boundary and three agent behavior tests.
+- `src/terminal.rs` contains one-shot and interactive entry points plus the one-shot output test.
+- `src/main.rs` passes stdout to one-shot mode.
+- The working tree has uncommitted changes in `src/main.rs`, `src/terminal.rs`, and this ledger.
 
 ### Exact resume point
 
-1. Define the conversation type at the shared core boundary while keeping its messages private.
-2. Change `agent::run` into a one-turn operation that accepts `&mut Conversation`.
-3. Append the user, assistant, and tool messages to that caller-owned history.
-4. Return the final assistant text instead of printing it.
-5. Make one-shot mode create one conversation and print the returned answer.
-6. Add the deterministic acceptance tests required by Task 1 before returning to the interactive loop.
+1. Read `02-interactive-cli.md` and compare its acceptance criteria with the existing `run_interactive` scaffold.
+2. Verify the current EOF behavior before changing code.
+3. Introduce only the input/output seams needed for deterministic interactive tests.
+4. Implement `/exit`, `/quit`, EOF, and multi-turn behavior one requirement at a time.
 
-No Task 1 completion evidence has been recorded. The current implementation remains unverified against the task's behavioral acceptance criteria.
-
-## Next-session Rust cleanup checklist
-
-Work in order and keep each change small:
-
-- [ ] **1. Start warning-free.** Remove the unused `serde_json::Value` import from `src/main.rs`, then run `cargo check --locked`. Do not mix other cleanup into this step.
-- [ ] **2. Establish the core state boundary.** Define a concrete `Conversation` with private messages in the agent core, rename `run` to a one-turn operation, and pass it `&mut Conversation`.
-- [ ] **3. Separate behavior from presentation.** Make the turn operation return its final text; let `terminal.rs` own stdin, prompts, `/quit`, stdout, and the lifetime of each conversation.
-- [ ] **4. Add only the test seams Task 1 requires.** Introduce a narrow model/provider abstraction for a scripted model and a writable output boundary for the one-shot frontend. Avoid general-purpose traits without a second implementation.
-- [ ] **5. Prove behavior before reorganizing modules.** Add the four Task 1 tests and run its acceptance commands. Keep the current flat `main`, `terminal`, `agent`, `tools`, and `wire` modules unless completed behavior reveals a specific reason to add folders or `lib.rs`.
-
-Rust principles practiced here: model state with a struct, preserve invariants with private fields, express temporary mutation with `&mut`, return data instead of performing caller-specific effects, and introduce traits at boundaries where behavior actually varies.
+Rust principles practiced in Task 1: model state with a struct, preserve invariants with private fields, express temporary mutation with `&mut`, return data instead of performing caller-specific effects, use trait bounds at genuinely variable boundaries, and inject `Write` for testable output.
 
 ## Validation record
 
 Add one structured entry after validation:
 
 ```text
-Date:
-Task:
-Commit or tree state:
-Commands:
-Exit statuses:
-Tests run:
-Tests passed:
-Checker report path:
+Date: 2026-09-29
+Task: 1 — Shared core
+Commit or tree state: master; uncommitted changes in src/main.rs, src/terminal.rs, and guides/acp/progress.md
+Commands: cargo fmt --all -- --check; cargo check --locked; cargo test --locked; if grep -nE '(^|[^e])println!' src/agent.rs; then exit 1; fi
+Exit statuses: 0; 0; 0; 0
+Tests run: 4
+Tests passed: 4
+Checker report path: none
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.
