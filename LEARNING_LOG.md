@@ -99,11 +99,17 @@ that uses `tracing`. Our 2 events came with 4 lines of `reqwest` / `hyper_util`
 noise. Scope it with per-target directives:
 
 ```bash
-RUST_LOG=codecrafters_claude_code=debug,warn   # our crate at debug, everything else warn+
+RUST_LOG=hobgoblin=debug,warn   # our crate at debug, everything else warn+
 ```
 
-The target is the **crate** name with underscores (`codecrafters_claude_code`),
-not the package name with hyphens. Common gotcha.
+The target is the **crate** name with underscores, not the package name with
+hyphens. Common gotcha. (The crate was `codecrafters_claude_code` until the
+2026-09-29 rename to `hobgoblin`.)
+
+Each event's `target` field is the full **module path** (`hobgoblin::agent`), and
+`RUST_LOG` directives match it by prefix, so `hobgoblin=debug` covers every
+module. An exact-match filter like jq's `.target == "hobgoblin"` does not — it
+silently matched nothing once the agent code moved out of `main.rs`.
 
 Fallback when `RUST_LOG` is unset is `"info"` (`src/main.rs:100`). Note: after
 removing the startup `info!`, we have zero info-level events — so no `RUST_LOG`
@@ -174,14 +180,14 @@ Escape hatches, in order of sanity:
 **`~/.jq` is auto-loaded.** Definitions there are available in every invocation
 with no flags. Good for things true across *all* projects.
 
-**Per-project: modules via `-L`.** We keep `jq_defs.jq` in the repo root:
+**Per-project: modules via `-L`.** We keep `jq_defs.jq` in `scripts/`:
 
 ```bash
-jq -L. -r 'include "jq_defs"; mine | brief' trace.jsonl
-jq -L. 'include "jq_defs"; resp | .choices[0].message' trace.jsonl
+jq -Lscripts -r 'include "jq_defs"; mine | brief' trace.jsonl
+jq -Lscripts 'include "jq_defs"; resp | .choices[0].message' trace.jsonl
 ```
 
-- `-L.` adds a directory to the module search path.
+- `-L<dir>` adds a directory to the module search path.
 - `include "jq_defs";` finds `jq_defs.jq` — the extension is implied.
 - `include` must come **first**, before any filter.
 - `import "jq_defs" as t;` namespaces instead (`t::payload`), for name
@@ -191,13 +197,14 @@ Current `jq_defs.jq`:
 
 ```jq
 def payload: .fields.payload | fromjson;
-def mine:    select(.target == "codecrafters_claude_code");
+def mine:    select(.target | startswith("hobgoblin"));
 def brief:   "\(.level) \(.target) \(.fields.event // .fields.message)";
 def req:     mine | select(.fields.event == "llm_request")  | payload;
 def resp:    mine | select(.fields.event == "llm_response") | payload;
 ```
 
-`-L.` resolves against the *current* directory, so it breaks in subdirectories.
+A relative `-L` resolves against the *current* directory, so it breaks in
+subdirectories. `scripts/messages.sh` avoids that by passing its own directory.
 Optional wrapper script to fix that:
 
 ```bash
