@@ -1,7 +1,8 @@
 [package]
-name = "codecrafters-claude-code"
+name = "hobgoblin"
 version = "0.1.0"
-authors = ["Codecrafters <hello@codecrafters.io>"]
+authors = ["Peter Cappetto"]
+description = "A coding agent harness in Rust that speaks ACP."
 edition = "2024"
 rust-version = "1.96"
 

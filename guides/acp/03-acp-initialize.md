@@ -147,7 +147,7 @@ Then run the subprocess checker against the actual application:
 ```sh
 uv run --script guides/acp/check_handshake.py \
   --report /tmp/acp-initialize-review.json \
-  --command /absolute/path/to/target/debug/codecrafters-claude-code --acp
+  --command /absolute/path/to/target/debug/hobgoblin --acp
 ```
 
 Replace the executable path with the absolute path on your machine. `--command` must be last because all remaining arguments are passed to the child process.

@@ -15,11 +15,14 @@ set -euo pipefail
 
 db="$HOME/Library/Application Support/Zed/threads/threads.db"
 repo="$(cd "$(dirname "$0")/.." && pwd)"
+# Threads from before the 2026-09-29 folder rename are stored under the old path.
+legacy="$HOME/repos/codecrafters-claude-code-rust"
+match="(folder_paths like '%$repo%' or folder_paths like '%$legacy%')"
 
 if [[ $# -eq 0 ]]; then
   sqlite3 -separator '  ' "$db" \
     "select substr(id, 1, 8), substr(updated_at, 1, 16), summary
-     from threads where folder_paths like '%$repo%'
+     from threads where $match
      order by updated_at desc"
   exit 0
 fi
@@ -29,7 +32,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 sqlite3 "$db" \
   "select writefile('$tmp/thread.zst', data) from threads
-   where id like '$1%' and folder_paths like '%$repo%' limit 1" >/dev/null
+   where id like '$1%' and $match limit 1" >/dev/null
 [[ -s "$tmp/thread.zst" ]] || { echo "No thread matching '$1' for $repo" >&2; exit 1; }
 
 zstd -dq "$tmp/thread.zst" -o "$tmp/thread.json"

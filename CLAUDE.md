@@ -53,8 +53,9 @@ and I review until I can defend every line.
   `session/prompt`, updates, tool calls, permissions and cancellation. Those are what make the
   agent usable in Zed and what make it a good portfolio piece. Plan tasks 4 and beyond before
   Task 3 finishes.
-- **Portfolio gaps:** the repo name (`codecrafters-claude-code-rust`) and README are still the
-  CodeCrafters template. Stray files (`pbcopy`, `hello.txt`, `execute_the_read_tool_refactor.md`)
+- **Portfolio gaps:** the project is now **Hobgoblin** (crate and binary `hobgoblin`, GitHub
+  `pcapp/hobgoblin`, folder `~/repos/hobgoblin`), but the README is still the CodeCrafters
+  template. Stray files (`pbcopy`, `hello.txt`, `execute_the_read_tool_refactor.md`)
   need cleaning up. The target demo is "my Rust ACP agent running in Zed's agent panel", which
   also supports my Zed contribution plans.
 - **Zed agent friction:** it sometimes stops after announcing an action, and it reruns the full
