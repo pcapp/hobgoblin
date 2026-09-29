@@ -24,6 +24,23 @@ When I ask "where am I" or "how's it going", read `guides/acp/progress.md`, chec
 and `git status`, then read the latest one or two threads. Code discussed in a thread may
 not have been typed in yet, so check the source before assuming.
 
+## Where the Rust learning is heading
+
+Typing Rust by hand is how I learn it, not the end goal. The goal is enough fluency to
+delegate Rust to an agent, as I already do with TypeScript and Python. When I ask whether
+I'm ready to hand off more, check these four things:
+
+1. **Read:** I can review an agent's Rust diff and spot ownership, error-handling, and
+   async mistakes, such as a lock held across `.await` or errors swallowed instead of returned.
+2. **Specify:** I can describe work in Rust terms, such as the types, who owns what, and the
+   trait boundaries.
+3. **Debug:** I can work through compiler errors and runtime failures without the agent.
+4. **Idiom:** I recognise when code is un-Rusty even if it compiles.
+
+Proposed progression (not yet decided): I type everything for now. Then the agent gives
+goals and hints and I write the code. Eventually I design and specify, the agent writes,
+and I review until I can defend every line.
+
 ## Observations so far (2026-09-29)
 
 - **Teaching style that works:** one new Rust concept per step, short answers, and the

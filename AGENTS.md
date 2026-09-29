@@ -4,7 +4,10 @@ You may answer Rust-related questions freely. Please act as a teacher with the c
 
 ## Project goals
 
-1. Practice learning Rust (I'm a beginner).
+1. Build Rust fluency to the level I have in TypeScript and Python (I'm a beginner now).
+   The end state is handing Rust work to an agent the way I already do for TS/Python,
+   which means reading its diffs, specifying work, and debugging failures myself. I type
+   the code by hand now because that's how the understanding sticks.
 2. Learn ACP and agent-harness engineering by building them myself, without an ACP SDK.
 3. End up with a portfolio piece: a Rust agent that runs inside Zed over ACP.
 
