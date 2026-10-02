@@ -123,4 +123,51 @@ mod tests {
 
         assert_eq!(model.requests.lock().unwrap().len(), 0);
     }
+
+    #[tokio::test]
+    async fn interactive_reuses_conversation_across_prompts() {
+        let model = ScriptedModel::new(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "scripted answer",
+                    "tool_calls": null
+                }
+            }]
+        }));
+
+        let mut output = Vec::new();
+        let mut input = Cursor::new(b"Hello.\nGoodbye.\n");
+
+        run_interactive(&model, &mut input, &mut output)
+            .await
+            .expect("interactive session should complete");
+
+        let requests = model.requests.lock().unwrap();
+
+        assert_eq!(requests.len(), 2);
+        assert_eq!(
+            requests[1]["messages"],
+            json!([
+                {
+                    "role": "user",
+                    "content": "Hello."
+                },
+                {
+                    "role": "assistant",
+                    "content": "scripted answer",
+                    "tool_calls": null
+                },
+                {
+                    "role": "user",
+                    "content": "Goodbye."
+                }
+            ])
+        );
+
+        assert_eq!(
+            String::from_utf8(output).expect("output should be UTF-8"),
+            "> scripted answer\n> scripted answer\n> "
+        );
+    }
 }
