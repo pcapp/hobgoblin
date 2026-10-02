@@ -68,6 +68,38 @@ mod tests {
     use clap::Parser;
 
     #[test]
+    fn no_arguments_selects_interactive_mode() {
+        let args = Args::try_parse_from(["hobgoblin"]).expect("no arguments should be accepted");
+
+        assert_eq!(args.prompt, None);
+        assert!(!args.acp);
+    }
+
+    #[test]
+    fn rejects_prompt_argument_without_a_value() {
+        let result = Args::try_parse_from(["hobgoblin", "-p"]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prompt_argument_selects_one_shot_mode() {
+        let args = Args::try_parse_from(["hobgoblin", "-p", "hello"])
+            .expect("-p with a value should be accepted");
+
+        assert_eq!(args.prompt, Some(String::from("hello")));
+        assert!(!args.acp);
+    }
+
+    #[test]
+    fn accepts_reserved_acp_argument() {
+        let args = Args::try_parse_from(["hobgoblin", "--acp"]).expect("--acp should be accepted");
+
+        assert_eq!(args.prompt, None);
+        assert!(args.acp);
+    }
+
+    #[test]
     fn rejects_invocations_with_both_acp_and_one_shot_options() {
         let result = Args::try_parse_from(["hobgoblin", "--acp", "-p", "What is 1 + 1?"]);
 
