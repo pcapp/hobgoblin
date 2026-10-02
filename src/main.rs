@@ -16,6 +16,9 @@ use std::{
 struct Args {
     #[arg(short = 'p', long)]
     prompt: Option<String>,
+
+    #[arg(long, conflicts_with = "prompt")]
+    acp: bool,
 }
 
 #[tokio::main]
@@ -57,4 +60,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             terminal::run_interactive(&client, &mut reader, &mut writer).await
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Args;
+    use clap::Parser;
+
+    #[test]
+    fn rejects_invocations_with_both_acp_and_one_shot_options() {
+        let result = Args::try_parse_from(["hobgoblin", "--acp", "-p", "What is 1 + 1?"]);
+
+        assert!(result.is_err());
+    }
 }
