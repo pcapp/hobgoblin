@@ -170,4 +170,56 @@ mod tests {
             "> scripted answer\n> scripted answer\n> "
         );
     }
+
+    #[tokio::test]
+    async fn interactive_exit_command_does_not_start_another_turn() {
+        let model = ScriptedModel::new(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "scripted answer",
+                    "tool_calls": null
+                }
+            }]
+        }));
+
+        let mut input = Cursor::new(b"Hello.\n/exit\n");
+        let mut output = Vec::new();
+
+        run_interactive(&model, &mut input, &mut output)
+            .await
+            .expect("/exit should end the interactive session successfully");
+
+        assert_eq!(model.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            String::from_utf8(output).expect("output should be UTF-8"),
+            "> scripted answer\n> "
+        );
+    }
+
+    #[tokio::test]
+    async fn interactive_quit_command_does_not_start_another_turn() {
+        let model = ScriptedModel::new(json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "scripted answer",
+                    "tool_calls": null
+                }
+            }]
+        }));
+
+        let mut input = Cursor::new(b"Hello.\n/quit\n");
+        let mut output = Vec::new();
+
+        run_interactive(&model, &mut input, &mut output)
+            .await
+            .expect("/quit should end the interactive session successfully");
+
+        assert_eq!(model.requests.lock().unwrap().len(), 1);
+        assert_eq!(
+            String::from_utf8(output).expect("output should be UTF-8"),
+            "> scripted answer\n> "
+        );
+    }
 }
