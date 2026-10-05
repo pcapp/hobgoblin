@@ -1,15 +1,90 @@
+use serde::Deserialize;
+use serde_json::Value;
+
 use crate::agent;
 use std::io::{BufRead, Write};
+
+#[derive(Debug, Deserialize)]
+struct ClientInfo {
+    name: String,
+    title: String,
+    version: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AuthCapabilities {
+    #[serde(default)]
+    terminal: bool,
+}
+
+#[derive(Debug, Deserialize)]
+enum BooleanConfigOptionCapabilities {
+    NotSupported,
+    Supported,
+}
+
+#[derive(Debug, Deserialize)]
+struct SessionConfigOptionsCapabilities {
+    boolean: Option<BooleanConfigOptionCapabilities>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientSessionCapabilities {
+    config_options: Option<SessionConfigOptionsCapabilities>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ElicitiationCapabilities {}
+
+#[derive(Debug, Default, Deserialize)]
+struct FileSystemCapabilities {
+    #[serde(default)]
+    readTextFile: bool,
+    #[serde(default)]
+    writeTextFile: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClientCapabilities {
+    #[serde(default)]
+    auth: AuthCapabilities,
+
+    elicitation: Option<ElicitiationCapabilities>,
+
+    #[serde(default)]
+    fs: FileSystemCapabilities,
+
+    session: Option<ClientSessionCapabilities>,
+
+    #[serde(default)]
+    terminal: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitializeRequest {
+    protocol_version: u8,
+    client_capabilities: ClientCapabilities,
+    client_info: ClientInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct Request<T> {
+    jsonrpc: String,
+    id: Value,
+    method: String,
+    params: T,
+}
 
 pub async fn run_acp<M: agent::Model, R: BufRead, W: Write>(
     _client: &M,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut buf = String::new();
-    reader.read_line(&mut buf)?;
+    let mut input = String::new();
+    reader.read_line(&mut input)?;
 
-    println!("{buf}");
+    let request: Request<InitializeRequest> = serde_json::from_str(&input)?;
 
     Ok(())
 }
