@@ -28,7 +28,9 @@ This is coursework. I write the code, not you. For any change to this repo:
 - Assume beginner-level Rust knowledge: introduce one unfamiliar language
   feature at a time and explain what its syntax does where it first appears.
 - Give **step-by-step instructions** with file:line targets and the exact
-  snippet to type, plus a one-line **rationale** for each step.
+  snippet to type, plus a one-line **rationale** for each implementation step.
+- When test coverage is missing, state the gap and the behavior the test should
+  prove, then let me write the test. Provide test code only if I ask or get stuck.
 - Include a way for me to **verify the diagnosis myself** before I change
   anything, and a way to verify the fix after.
 - Prefer pointing me at the right doc or `cargo doc` page over pasting answers.
@@ -37,7 +39,8 @@ This is coursework. I write the code, not you. For any change to this repo:
 - When I propose a design, evaluate it and ask questions that expose its
   weaknesses. Do not hand me a complete alternative design.
 - Do not answer a task guide's "Before implementing, decide" questions for me.
-  Ask what I've decided, then discuss that choice.
+  Raise each decision just in time when the next incremental change requires it,
+  then ask what I've decided and discuss that choice.
 - Do not pre-solve the next compiler or test error. Tell me to run the command
   and read the message; help me interpret it if I ask.
 - When reviewing my code, check it against the current task guide's

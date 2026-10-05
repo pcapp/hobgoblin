@@ -34,6 +34,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
+    if args.acp {
+        let mut reader = stdin().lock();
+        return acp::run_acp(&mut reader).await;
+    }
+
     dotenvy::dotenv().ok();
 
     let base_url = env::var("OPENROUTER_BASE_URL")
@@ -54,11 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut stdout = std::io::stdout();
         return terminal::run_once(&client, &mut stdout, prompt.as_str()).await;
     };
-
-    if args.acp {
-        let mut reader = stdin().lock();
-        return acp::run_acp(&mut reader).await;
-    }
 
     let mut reader = stdin().lock();
     let mut writer = stdout().lock();

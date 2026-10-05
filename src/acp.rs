@@ -43,7 +43,11 @@ fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::
 
 pub async fn run_acp<R: BufRead>(reader: &mut R) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
-    reader.read_line(&mut input)?;
+    let n = reader.read_line(&mut input)?;
+
+    if n == 0 {
+        return Ok(());
+    }
 
     let request: Request<Value> = serde_json::from_str(&input)?;
     validate_request(&request)?;
@@ -58,6 +62,15 @@ mod tests {
     use serde_json::Value;
 
     use crate::acp::{Request, run_acp, validate_request};
+
+    #[tokio::test]
+    async fn clean_eof_exits_successfully() {
+        let mut reader = Cursor::new(b"");
+
+        run_acp(&mut reader)
+            .await
+            .expect("clean EOF should end ACP mode successfully");
+    }
 
     #[test]
     fn invalidates_jsonrpc_other_than_2() {

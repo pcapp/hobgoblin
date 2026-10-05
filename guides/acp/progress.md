@@ -98,6 +98,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 2. Inspect `src/main.rs`, `Cargo.toml`, `src/wire.rs`, and `guides/acp/check_handshake.py` before choosing where ACP framing and dispatch should live.
 3. Verify the current behavior of `--acp` before making the first Task 3 change.
 
+## Session checkpoint — 2026-10-05 (Task 3 started)
+
+### Current understanding
+
+- ACP initialization is a protocol concern and does not need a model provider or API key.
+- `--acp` must be routed before dotenv loading and OpenRouter client construction.
+- `BufRead::read_line` returns `0` when EOF occurs before any bytes are read, allowing clean EOF to end ACP mode successfully.
+- Missing test coverage should be described by the behavior it must prove; the learner writes the test unless they ask for implementation help.
+
+### Source checkpoint
+
+- Task 3 is in progress.
+- `src/main.rs` routes `--acp` before provider configuration.
+- `src/acp.rs` treats empty stdin as clean EOF, with a focused regression test.
+- Formatting, Cargo check, all 16 tests, a build, and a credential-free subprocess probe passed before this checkpoint was committed.
+
+### Exact resume point
+
+1. Continue replacing the synchronous ACP stdio scaffold with Tokio I/O.
+2. Identify the Tokio features required for async stdin/stdout and buffered async reads.
+3. Decide the async reader boundary needed by the next incremental change, then implement and verify only that change.
+4. Bounded framing, response writing, dispatch, and full checker acceptance remain unverified.
+
 ## Validation record
 
 Add one structured entry after validation:
