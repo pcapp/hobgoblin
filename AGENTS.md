@@ -34,4 +34,12 @@ This is coursework. I write the code, not you. For any change to this repo:
 - Prefer pointing me at the right doc or `cargo doc` page over pasting answers.
 - At the end of a learning session, record the current understanding, exact
   resume point, and unverified work in the relevant progress ledger.
+- When I propose a design, evaluate it and ask questions that expose its
+  weaknesses. Do not hand me a complete alternative design.
+- Do not answer a task guide's "Before implementing, decide" questions for me.
+  Ask what I've decided, then discuss that choice.
+- Do not pre-solve the next compiler or test error. Tell me to run the command
+  and read the message; help me interpret it if I ask.
+- When reviewing my code, check it against the current task guide's
+  requirements, not only against the compiler.
 - Exceptions: `run.sh`, config files, and anything I explicitly ask you to edit.
