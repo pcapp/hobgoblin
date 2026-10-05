@@ -118,6 +118,8 @@ The supplied checker requires an unknown request method to receive a correlated 
 
 The exact modules, enums, and function signatures are your design.
 
+**Looking ahead to Task 4:** consider writing the frame reader and writer against Tokio's `AsyncBufRead` and `AsyncWrite` traits rather than calling `stdin()` and `stdout()` inside them, the same seam Task 2 used with `BufRead` and `Write`. Task 4's in-memory tests with `tokio::io::duplex` depend on it. This is a recommendation, not an acceptance requirement.
+
 ## Suggested implementation path
 
 1. Change argument parsing and route `--acp` before provider setup.
@@ -156,4 +158,4 @@ The checker launches the application without common model credentials and from a
 
 Task 3 is complete only when every command exits with status 0 and the checker report has `passed` equal to `total`. No manual protocol exchange, live model call, or written explanation counts toward completion.
 
-Record the commands, exit statuses, and report path in [progress.md](progress.md). The next course tasks should be designed from the implementation you now have, beginning with ACP session creation and prompt delivery.
+Record the commands, exit statuses, and report path in [progress.md](progress.md). Before starting [Task 4](04-reader-writer-tasks.md), refine its draft from the implementation you now have.

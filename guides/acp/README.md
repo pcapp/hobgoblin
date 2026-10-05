@@ -32,8 +32,14 @@ The core owns agent behavior. Each frontend owns its input and presentation:
 1. [Extract a reusable agent core](01-shared-core.md)
 2. [Add an interactive multi-turn terminal](02-interactive-cli.md)
 3. [Add ACP initialization to the application](03-acp-initialize.md)
+4. [Split the transport into reader and writer tasks](04-reader-writer-tasks.md) (draft)
+5. [Create sessions](05-session-new.md) (draft)
+6. [Run a prompt turn over ACP](06-session-prompt.md) (draft)
+7. [Cancel a prompt turn](07-cancellation.md) (draft)
+8. [Ask the client for permission](08-permissions.md) (draft)
+9. [Report tool calls to the client](09-tool-call-updates.md) (draft)
 
-These tasks stop at initialization. Session creation, ACP prompts, tool reporting, permissions, and cancellation will be designed after the code has evolved through these first changes.
+Tasks 4–9 each add one async concept, introduced by the ACP feature that needs it. They are drafts: refine each one from the previous task's code before starting it.
 
 See [the roadmap](milestones.md) for the goals and boundaries of the current sequence. Record completed work in [progress.md](progress.md).
 
