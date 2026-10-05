@@ -1,3 +1,4 @@
+mod acp;
 mod agent;
 mod terminal;
 mod tools;
@@ -49,17 +50,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
-    return match args.prompt {
-        Some(prompt) => {
-            let mut stdout = std::io::stdout();
-            terminal::run_once(&client, &mut stdout, prompt.as_str()).await
-        }
-        None => {
-            let mut reader = stdin().lock();
-            let mut writer = stdout().lock();
-            terminal::run_interactive(&client, &mut reader, &mut writer).await
-        }
+    if let Some(prompt) = args.prompt {
+        let mut stdout = std::io::stdout();
+        return terminal::run_once(&client, &mut stdout, prompt.as_str()).await;
     };
+
+    if args.acp {
+        let mut reader = stdin().lock();
+        let mut writer = stdout().lock();
+        return acp::run_acp(&client, &mut reader, &mut writer).await;
+    }
+
+    let mut reader = stdin().lock();
+    let mut writer = stdout().lock();
+    terminal::run_interactive(&client, &mut reader, &mut writer).await
 }
 
 #[cfg(test)]
