@@ -51,6 +51,12 @@ pub async fn run_acp<R: AsyncBufRead + Unpin>(
         let n = reader.read_line(&mut input).await?;
         if n == 0 {
             break;
+        } else if !input.ends_with('\n') {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "the last message should have a newline",
+            )
+            .into());
         }
 
         let request: Request<Value> = serde_json::from_str(&input)?;
@@ -92,6 +98,37 @@ mod tests {
             .expect_err("JSON-RPC versions other than 2.0 should be rejected");
 
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
+    }
+
+    #[tokio::test]
+    async fn the_last_frame_must_have_a_newline() {
+        let messages = serde_json::json!([{
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "first",
+        },{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "second",
+        }]);
+
+        let input = messages
+            .as_array()
+            .expect("messages fixture should be an array")
+            .iter()
+            .map(|message| serde_json::to_string(&message).expect("message should serialize"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let mut cursor = Cursor::new(input.as_bytes());
+        let error = run_acp(&mut cursor)
+            .await
+            .expect_err("unterminated frame should be rejected");
+
+        let io_error = error
+            .downcast_ref::<std::io::Error>()
+            .expect("error to be an io::Error");
+        assert_eq!(io_error.kind(), std::io::ErrorKind::UnexpectedEof);
     }
 
     #[tokio::test]
