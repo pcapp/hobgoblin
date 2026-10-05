@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if args.acp {
-        let mut reader = stdin().lock();
+        let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
         return acp::run_acp(&mut reader).await;
     }
 

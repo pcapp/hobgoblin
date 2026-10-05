@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use std::io::BufRead;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
 #[derive(Deserialize)]
 struct Request<T> {
@@ -41,9 +41,11 @@ fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-pub async fn run_acp<R: BufRead>(reader: &mut R) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_acp<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
-    let n = reader.read_line(&mut input)?;
+    let n = reader.read_line(&mut input).await?;
 
     if n == 0 {
         return Ok(());
