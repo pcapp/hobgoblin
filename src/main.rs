@@ -57,8 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.acp {
         let mut reader = stdin().lock();
-        let mut writer = stdout().lock();
-        return acp::run_acp(&client, &mut reader, &mut writer).await;
+        return acp::run_acp(&mut reader).await;
     }
 
     let mut reader = stdin().lock();

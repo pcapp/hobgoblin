@@ -1,90 +1,52 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::agent;
-use std::io::{BufRead, Write};
+use std::io::BufRead;
 
-#[derive(Debug, Deserialize)]
-struct ClientInfo {
-    name: String,
-    title: String,
-    version: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct AuthCapabilities {
-    #[serde(default)]
-    terminal: bool,
-}
-
-#[derive(Debug, Deserialize)]
-enum BooleanConfigOptionCapabilities {
-    NotSupported,
-    Supported,
-}
-
-#[derive(Debug, Deserialize)]
-struct SessionConfigOptionsCapabilities {
-    boolean: Option<BooleanConfigOptionCapabilities>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClientSessionCapabilities {
-    config_options: Option<SessionConfigOptionsCapabilities>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ElicitiationCapabilities {}
-
-#[derive(Debug, Default, Deserialize)]
-struct FileSystemCapabilities {
-    #[serde(default)]
-    readTextFile: bool,
-    #[serde(default)]
-    writeTextFile: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClientCapabilities {
-    #[serde(default)]
-    auth: AuthCapabilities,
-
-    elicitation: Option<ElicitiationCapabilities>,
-
-    #[serde(default)]
-    fs: FileSystemCapabilities,
-
-    session: Option<ClientSessionCapabilities>,
-
-    #[serde(default)]
-    terminal: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InitializeRequest {
-    protocol_version: u8,
-    client_capabilities: ClientCapabilities,
-    client_info: ClientInfo,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct Request<T> {
     jsonrpc: String,
     id: Value,
+
+    #[allow(dead_code)]
     method: String,
-    params: T,
+
+    #[allow(dead_code)]
+    params: Option<T>,
 }
 
-pub async fn run_acp<M: agent::Model, R: BufRead, W: Write>(
-    _client: &M,
-    reader: &mut R,
-    writer: &mut W,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::Error>> {
+    if request.jsonrpc != "2.0" {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "expected JSON-RPC version 2.0",
+        )
+        .into());
+    }
+
+    let is_supported_id = match &request.id {
+        Value::String(_) => true,
+        Value::Number(number) => number.is_u64() || number.is_i64(),
+        _ => false,
+    };
+
+    if !is_supported_id {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "request ID must be a string or integer",
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+pub async fn run_acp<R: BufRead>(reader: &mut R) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     reader.read_line(&mut input)?;
 
-    let request: Request<InitializeRequest> = serde_json::from_str(&input)?;
+    let request: Request<Value> = serde_json::from_str(&input)?;
+    validate_request(&request)?;
 
     Ok(())
 }
@@ -93,16 +55,25 @@ pub async fn run_acp<M: agent::Model, R: BufRead, W: Write>(
 mod tests {
     use std::io::Cursor;
 
-    use crate::{acp::run_acp, agent};
-    struct ScriptedModel {}
+    use serde_json::Value;
 
-    impl agent::Model for ScriptedModel {
-        async fn complete(
-            &self,
-            _request: serde_json::Value,
-        ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-            Ok(serde_json::json!({}))
-        }
+    use crate::acp::{Request, run_acp, validate_request};
+
+    #[test]
+    fn invalidates_jsonrpc_other_than_2() {
+        let request = serde_json::json!({
+            "jsonrpc": "1.0",
+            "id": 0,
+            "method": "initialize",
+        });
+
+        let request: Request<Value> =
+            serde_json::from_value(request).expect("fixture should be a valid request shape");
+
+        let error = validate_request(&request)
+            .expect_err("JSON-RPC versions other than 2.0 should be rejected");
+
+        assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
     }
 
     #[tokio::test]
@@ -128,14 +99,12 @@ mod tests {
           }
         });
 
-        let client = ScriptedModel {};
         let mut input =
             serde_json::to_string(&init_request).expect("initialize message should serialize");
         input.push('\n');
         let mut reader = Cursor::new(&input);
-        let mut writer = Vec::new();
 
-        run_acp(&client, &mut reader, &mut writer)
+        run_acp(&mut reader)
             .await
             .expect("initialize request should succeed");
     }
