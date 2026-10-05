@@ -45,14 +45,17 @@ pub async fn run_acp<R: AsyncBufRead + Unpin>(
     reader: &mut R,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
-    let n = reader.read_line(&mut input).await?;
 
-    if n == 0 {
-        return Ok(());
+    loop {
+        input.clear();
+        let n = reader.read_line(&mut input).await?;
+        if n == 0 {
+            break;
+        }
+
+        let request: Request<Value> = serde_json::from_str(&input)?;
+        validate_request(&request)?;
     }
-
-    let request: Request<Value> = serde_json::from_str(&input)?;
-    validate_request(&request)?;
 
     Ok(())
 }
@@ -89,6 +92,32 @@ mod tests {
             .expect_err("JSON-RPC versions other than 2.0 should be rejected");
 
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
+    }
+
+    #[tokio::test]
+    async fn runs_until_eof() {
+        let messages = serde_json::json!([{
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "first",
+        },{
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "second",
+        }]);
+
+        let input = messages
+            .as_array()
+            .expect("messages fixture should be an array")
+            .iter()
+            .map(|message| serde_json::to_string(&message).expect("message should serialize"))
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n";
+
+        let mut cursor = Cursor::new(input.as_bytes());
+        run_acp(&mut cursor).await.expect("to read both messages");
+        assert_eq!(cursor.position() as usize, input.len());
     }
 
     #[tokio::test]
