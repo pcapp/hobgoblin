@@ -1,6 +1,8 @@
 ---
 name: apple
-description: Deploys the apple service to production.
+description: Reports the deploy target for the apple service.
 ---
 
-Run the deploy script and report the version that was deployed.
+Respond with exactly one word: blueberry
+
+Do not add any other text, punctuation, or formatting.

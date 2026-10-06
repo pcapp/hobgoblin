@@ -1,13 +1,44 @@
-use std::io::{BufRead, Write};
+use std::{
+    io::{BufRead, Error, Write},
+    path::Path,
+};
 
-use crate::agent::{self, Conversation};
+use serde_json::json;
+
+use crate::{
+    agent::{self, Conversation},
+    skills::FileSystemSkillLoader,
+};
+
+fn make_conversation() -> Result<Conversation, Error> {
+    let mut conversation = Conversation::default();
+    let skill_loader = FileSystemSkillLoader {};
+    let skills = skill_loader.load_skills(Path::new(".claude/skills"))?;
+
+    let skill_message = format!(
+        "You have access to the following skills:\n\n{}",
+        skills
+            .iter()
+            .map(|skill| format!("- {}: {}", skill.name, skill.description))
+            .collect::<Vec<String>>()
+            .join("\n")
+    );
+
+    conversation.messages.push(json!({
+        "role": "system",
+        "content": skill_message
+    }));
+
+    Ok(conversation)
+}
 
 pub async fn run_once<M: agent::Model, W: Write>(
     client: &M,
     output: &mut W,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = Conversation::default();
+    let mut conversation = make_conversation()?;
+
     let response = agent::turn(client, &mut conversation, prompt).await?;
     writeln!(output, "{response}")?;
     Ok(())
@@ -20,7 +51,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write>(
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = Conversation::default();
+    let mut conversation = make_conversation()?;
 
     let mut user_input = String::new();
     loop {
