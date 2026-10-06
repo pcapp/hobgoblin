@@ -1,36 +1,87 @@
+# Hobgoblin
+
 [![CI](https://github.com/pcapp/hobgoblin/actions/workflows/ci.yml/badge.svg)](https://github.com/pcapp/hobgoblin/actions/workflows/ci.yml)
-[![progress-banner](https://backend.codecrafters.io/progress/claude-code/cda00cef-5ce1-46e8-933b-118b8a8fc378)](https://app.codecrafters.io/users/pcapp?r=2qF)
 
-This is a starting point for Rust solutions to the
-["Build Your own Claude Code" Challenge](https://codecrafters.io/challenges/claude-code).
+Hobgoblin is a small coding-agent harness written in Rust. It began as a solution to CodeCrafters' [Build Your Own Claude Code](https://codecrafters.io/challenges/claude-code) challenge and is evolving into an agent that can run inside editors such as Zed over the [Agent Client Protocol (ACP)](https://agentclientprotocol.com/).
 
-Claude Code is an AI coding assistant that uses Large Language Models (LLMs) to
-understand code and perform actions through tool calls. In this challenge,
-you'll build your own Claude Code from scratch by implementing an LLM-powered
-coding assistant.
+The project is also a hands-on exercise in Rust, asynchronous I/O, agent loops, tool calling, and protocol design. ACP is implemented directly with Tokio and Serde rather than through an SDK.
 
-Along the way you'll learn about HTTP RESTful APIs, OpenAI-compatible tool
-calling, agent loop, and how to integrate multiple tools into an AI assistant.
+## Current capabilities
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+- One-shot prompts from the command line
+- Interactive, multi-turn terminal conversations
+- OpenRouter access through an OpenAI-compatible client
+- Model-directed tools for reading files, writing files, and running shell commands
+- Deterministic tests using a scripted model implementation
+- Early ACP transport work, including asynchronous bounded frame reading
 
-# Passing the first stage
+> **Project status:** terminal modes are usable. The ACP frontend is under active development and does not yet complete the initialization handshake or run prompt sessions. See the [roadmap](guides/acp/milestones.md) and [progress ledger](guides/acp/progress.md) for the exact status.
 
-The entry point for your `claude-code` implementation is in `src/main.rs`. Study
-and uncomment the relevant code, and submit to pass the first stage:
+## Requirements
 
-```sh
-codecrafters submit
+- Rust 1.96 or newer
+- An [OpenRouter](https://openrouter.ai/) API key for terminal modes
+
+## Setup
+
+Clone the repository and create a `.env` file in its root:
+
+```dotenv
+OPENROUTER_API_KEY=your_api_key_here
 ```
 
-# Stage 2 & beyond
+`OPENROUTER_BASE_URL` is optional and defaults to `https://openrouter.ai/api/v1`.
 
-Note: This section is for stages 2 and beyond.
+Build the project:
 
-1. Ensure you have `cargo (1.96)` installed locally.
-2. Run `./your_program.sh` to run your program, which is implemented in
-   `src/main.rs`. This command compiles your Rust project, so it might be slow
-   the first time you run it. Subsequent runs will be fast.
-3. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+```sh
+cargo build --locked
+```
+
+## Usage
+
+Start an interactive conversation:
+
+```sh
+cargo run --locked
+```
+
+Enter `/exit` or `/quit`, or send EOF, to end the session.
+
+Run a single prompt:
+
+```sh
+cargo run --locked -- -p "Summarize the files in this repository"
+```
+
+Display all command-line options:
+
+```sh
+cargo run --locked -- --help
+```
+
+The agent currently uses `anthropic/claude-haiku-4.5` and can execute `Read`, `Write`, and `Bash` tool calls on the local machine. Run it only in a directory where you are comfortable allowing model-directed file changes and shell commands.
+
+## Architecture
+
+Hobgoblin keeps the agent core separate from its frontends:
+
+- `src/agent.rs` owns the conversation and model/tool loop.
+- `src/terminal.rs` provides one-shot and interactive terminal interfaces.
+- `src/tools.rs` defines and executes local tools.
+- `src/acp.rs` contains the developing ACP stdio transport.
+- `src/wire.rs` defines provider-facing wire types.
+
+The terminal frontend owns conversation state and passes it into the core for each turn. This allows one shared agent loop to support one-shot CLI, interactive CLI, and—eventually—ACP clients without coupling presentation or transport concerns to model execution.
+
+## Development
+
+Run the standard checks with:
+
+```sh
+cargo fmt --all -- --check
+cargo check --locked
+cargo test --locked
+```
+
+The near-term roadmap adds ACP initialization, session management, prompt turns, cancellation, permissions, and tool-call updates. The intended end result is a portfolio-scale Rust coding agent that runs inside Zed without relying on an ACP SDK.
