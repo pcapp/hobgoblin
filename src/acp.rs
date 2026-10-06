@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
 
 #[derive(Deserialize)]
 struct Request<T> {
@@ -14,6 +14,8 @@ struct Request<T> {
     #[allow(dead_code)]
     params: Option<T>,
 }
+
+const MAX_FRAME_BYTES: usize = 64 * 1024;
 
 fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::Error>> {
     if request.jsonrpc != "2.0" {
@@ -48,10 +50,25 @@ pub async fn run_acp<R: AsyncBufRead + Unpin>(
 
     loop {
         input.clear();
-        let n = reader.read_line(&mut input).await?;
+        let n = {
+            let mut limited_reader = (&mut *reader).take((MAX_FRAME_BYTES + 1) as u64);
+
+            limited_reader.read_line(&mut input).await?
+        };
+
         if n == 0 {
             break;
-        } else if !input.ends_with('\n') {
+        }
+
+        if n > MAX_FRAME_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "ACP frame exceeds maximum size",
+            )
+            .into());
+        }
+
+        if !input.ends_with('\n') {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::UnexpectedEof,
                 "the last message should have a newline",
@@ -72,7 +89,24 @@ mod tests {
 
     use serde_json::Value;
 
-    use crate::acp::{Request, run_acp, validate_request};
+    use crate::acp::{MAX_FRAME_BYTES, Request, run_acp, validate_request};
+
+    fn valid_request_frame_with_size(size: usize) -> String {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+        });
+        let mut frame = serde_json::to_string(&request).expect("request should serialize");
+        let padding_bytes = size
+            .checked_sub(frame.len() + 1)
+            .expect("target size should fit the request and newline");
+
+        frame.push_str(&" ".repeat(padding_bytes));
+        frame.push('\n');
+        assert_eq!(frame.len(), size, "fixture should have the target size");
+        frame
+    }
 
     #[tokio::test]
     async fn clean_eof_exits_successfully() {
@@ -98,6 +132,31 @@ mod tests {
             .expect_err("JSON-RPC versions other than 2.0 should be rejected");
 
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
+    }
+
+    #[tokio::test]
+    async fn frame_at_maximum_size_is_accepted() {
+        let input = valid_request_frame_with_size(MAX_FRAME_BYTES);
+        let mut reader = Cursor::new(input.as_bytes());
+
+        run_acp(&mut reader)
+            .await
+            .expect("a frame at the maximum size should be accepted");
+    }
+
+    #[tokio::test]
+    async fn frame_over_maximum_size_is_rejected() {
+        let input = valid_request_frame_with_size(MAX_FRAME_BYTES + 1);
+        let mut reader = Cursor::new(input.as_bytes());
+
+        let error = run_acp(&mut reader)
+            .await
+            .expect_err("an oversized frame should be rejected");
+        let io_error = error
+            .downcast_ref::<std::io::Error>()
+            .expect("error should be an io::Error");
+
+        assert_eq!(io_error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[tokio::test]

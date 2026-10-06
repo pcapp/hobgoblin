@@ -20,7 +20,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 |---|---|---|---|
 | [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
-| [3 — ACP initialize](03-acp-initialize.md) | not started | Real binary completes ACP initialization through Tokio stdio | — |
+| [3 — ACP initialize](03-acp-initialize.md) | in progress | Real binary completes ACP initialization through Tokio stdio | Async input, bounded multi-frame reads, clean EOF, and unterminated-frame rejection are covered |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -120,6 +120,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 2. Identify the Tokio features required for async stdin/stdout and buffered async reads.
 3. Decide the async reader boundary needed by the next incremental change, then implement and verify only that change.
 4. Bounded framing, response writing, dispatch, and full checker acceptance remain unverified.
+
+## Session checkpoint — 2026-10-05 (Task 3 framing)
+
+### Current understanding
+
+- An `async fn` remains blocking if it calls synchronous I/O; ACP stdin now uses Tokio's `AsyncBufRead` boundary and `BufReader<Stdin>` in production.
+- `read_line` appends to its `String`, so a reused frame buffer must be cleared before each read.
+- `read_line` returns after a newline or EOF. Empty EOF is clean shutdown, while nonempty input ending at EOF without `\n` is an incomplete frame.
+- A boxed `dyn Error` can be checked by downcasting to `std::io::Error` and then comparing its `ErrorKind`.
+- A per-frame `take` adapter with a limit one byte above the policy can distinguish an exactly 64 KiB frame from an oversized frame without unbounded allocation.
+
+### Source checkpoint
+
+- Task 3 is in progress on `master`.
+- ACP input uses Tokio async I/O, reads multiple bounded frames through clean EOF, and rejects an unterminated final frame as `UnexpectedEof`.
+- `src/acp.rs` applies a per-frame `AsyncReadExt::take` adapter and rejects oversized input as `InvalidData`.
+- Exact-limit and one-byte-over tests are present. The focused boundary tests, formatting, Cargo check, and all 20 tests passed.
+
+### Exact resume point
+
+1. Continue Task 3 with the ACP output boundary: decide just in time how `run_acp` should receive an async writer while preserving one stdout owner.
+2. Add compact newline-terminated response writing and explicit flushing before expanding dispatch.
+3. JSON-RPC classification and dispatch, initialization responses, unknown-method errors, and full checker acceptance remain unfinished.
 
 ## Validation record
 
