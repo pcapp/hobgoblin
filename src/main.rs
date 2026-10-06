@@ -1,5 +1,6 @@
 mod acp;
 mod agent;
+mod skills;
 mod terminal;
 mod tools;
 mod wire;
