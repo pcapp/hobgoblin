@@ -1,43 +1,46 @@
 use std::{
     io::{BufRead, Error, Write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use serde_json::json;
 
 use crate::{
     agent::{self, Conversation},
-    skills::FileSystemSkillLoader,
+    skills::SkillLoader,
 };
 
-fn make_conversation() -> Result<Conversation, Error> {
+fn make_conversation<L: SkillLoader>(skill_loader: &L) -> Result<Conversation, Error> {
     let mut conversation = Conversation::default();
-    let skill_loader = FileSystemSkillLoader {};
-    let skills = skill_loader.load_skills(Path::new(".claude/skills"))?;
+
+    let skills_by_name = skill_loader.load_skills()?;
 
     let skill_message = format!(
         "You have access to the following skills:\n\n{}",
-        skills
+        skills_by_name
             .iter()
-            .map(|skill| format!("- {}: {}", skill.name, skill.description))
+            .map(|(name, skill)| format!("- {}: {}", name, skill.description))
             .collect::<Vec<String>>()
             .join("\n")
     );
 
-    conversation.messages.push(json!({
-        "role": "system",
-        "content": skill_message
-    }));
+    if !skills_by_name.is_empty() {
+        conversation.messages.push(json!({
+            "role": "system",
+            "content": skill_message
+        }));
+    }
 
     Ok(conversation)
 }
 
-pub async fn run_once<M: agent::Model, W: Write>(
+pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     client: &M,
+    skill_loader: &L,
     output: &mut W,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = make_conversation()?;
+    let mut conversation = make_conversation(skill_loader)?;
 
     let response = agent::turn(client, &mut conversation, prompt).await?;
     writeln!(output, "{response}")?;
@@ -46,12 +49,13 @@ pub async fn run_once<M: agent::Model, W: Write>(
 
 const PROMPT: &str = "> ";
 
-pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write>(
+pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoader>(
     client: &M,
+    skill_loader: &L,
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = make_conversation()?;
+    let mut conversation = make_conversation(skill_loader)?;
 
     let mut user_input = String::new();
     loop {
@@ -84,12 +88,13 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write>(
 
 #[cfg(test)]
 mod tests {
-    use std::{io::Cursor, sync::Mutex};
+    use std::{collections::HashMap, io::Cursor, sync::Mutex};
 
     use serde_json::{Value, json};
 
     use crate::{
         agent,
+        skills::{Skill, SkillLoader},
         terminal::{run_interactive, run_once},
     };
 
@@ -114,6 +119,17 @@ mod tests {
         }
     }
 
+    struct ScriptedSkillLoader {}
+
+    impl SkillLoader for ScriptedSkillLoader {
+        fn load_skills(
+            &self,
+        ) -> Result<std::collections::HashMap<String, crate::skills::Skill>, std::io::Error>
+        {
+            Ok(HashMap::new())
+        }
+    }
+
     #[tokio::test]
     async fn runs_once_writes_one_turn_answer_to_output() {
         let model = ScriptedModel::new(json!({
@@ -126,9 +142,11 @@ mod tests {
             }]
         }));
 
+        let skill_loader = ScriptedSkillLoader {};
+
         let mut output = Vec::new();
 
-        run_once(&model, &mut output, "hello")
+        run_once(&model, &skill_loader, &mut output, "hello")
             .await
             .expect("one-shot frontend should succeed");
 
@@ -144,9 +162,10 @@ mod tests {
     async fn run_interactive_stops_on_eof() {
         let mut input = Cursor::new(b"");
         let model = ScriptedModel::new(json!("not used"));
+        let skill_loader = ScriptedSkillLoader {};
         let mut output = Vec::new();
 
-        let _: () = run_interactive(&model, &mut input, &mut output)
+        let _: () = run_interactive(&model, &skill_loader, &mut input, &mut output)
             .await
             .expect("EOF should end the interactive session successfully.");
 
@@ -167,10 +186,12 @@ mod tests {
             }]
         }));
 
+        let skill_loader = ScriptedSkillLoader {};
+
         let mut output = Vec::new();
         let mut input = Cursor::new(b"Hello.\nGoodbye.\n");
 
-        run_interactive(&model, &mut input, &mut output)
+        run_interactive(&model, &skill_loader, &mut input, &mut output)
             .await
             .expect("interactive session should complete");
 
@@ -214,10 +235,12 @@ mod tests {
             }]
         }));
 
+        let skill_loader = ScriptedSkillLoader {};
+
         let mut input = Cursor::new(b"Hello.\n/exit\n");
         let mut output = Vec::new();
 
-        run_interactive(&model, &mut input, &mut output)
+        run_interactive(&model, &skill_loader, &mut input, &mut output)
             .await
             .expect("/exit should end the interactive session successfully");
 
@@ -240,10 +263,12 @@ mod tests {
             }]
         }));
 
+        let skill_loader = ScriptedSkillLoader {};
+
         let mut input = Cursor::new(b"Hello.\n/quit\n");
         let mut output = Vec::new();
 
-        run_interactive(&model, &mut input, &mut output)
+        run_interactive(&model, &skill_loader, &mut input, &mut output)
             .await
             .expect("/quit should end the interactive session successfully");
 

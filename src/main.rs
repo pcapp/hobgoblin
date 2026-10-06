@@ -10,8 +10,11 @@ use clap::Parser;
 use std::{
     env,
     io::{stdin, stdout},
+    path::PathBuf,
     process,
 };
+
+use crate::skills::FileSystemSkillLoader;
 
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -56,14 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client = Client::with_config(config);
 
+    let skill_loader = FileSystemSkillLoader {
+        skill_root: PathBuf::from(".claude/skills"),
+    };
+
     if let Some(prompt) = args.prompt {
         let mut stdout = std::io::stdout();
-        return terminal::run_once(&client, &mut stdout, prompt.as_str()).await;
+        return terminal::run_once(&client, &skill_loader, &mut stdout, prompt.as_str()).await;
     };
 
     let mut reader = stdin().lock();
     let mut writer = stdout().lock();
-    terminal::run_interactive(&client, &mut reader, &mut writer).await
+    terminal::run_interactive(&client, &skill_loader, &mut reader, &mut writer).await
 }
 
 #[cfg(test)]
