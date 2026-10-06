@@ -9,11 +9,11 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Skill {
-    name: String,
-    description: String,
+    pub name: String,
+    pub description: String,
 }
 
-struct FileSystemSkillLoader {}
+pub struct FileSystemSkillLoader {}
 impl FileSystemSkillLoader {
     fn extract_skill(skills_file: &Path) -> Result<Skill, Error> {
         let input = fs::read_to_string(skills_file)?;
@@ -31,7 +31,7 @@ impl FileSystemSkillLoader {
         })
     }
 
-    fn load_skills(&self, skill_root: &Path) -> Result<Vec<Skill>, Error> {
+    pub fn load_skills(&self, skill_root: &Path) -> Result<Vec<Skill>, Error> {
         let mut skills = Vec::new();
         if !fs::exists(skill_root)? {
             return Ok(skills);

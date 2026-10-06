@@ -1,8 +1,10 @@
+use crate::skills::FileSystemSkillLoader;
 use crate::tools::{execute_tool_call, specs};
 use crate::wire::ChatResponse;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use serde_json::{Value, json};
+use std::path::Path;
 
 #[derive(Debug, Default)]
 pub struct Conversation {
@@ -25,6 +27,22 @@ pub async fn turn<M: Model>(
     prompt: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let tools = specs();
+    let skill_loader = FileSystemSkillLoader {};
+    let skills = skill_loader.load_skills(Path::new(".claude/skills"))?;
+
+    let skill_message = format!(
+        "You have access to the following skills:\n\n{}",
+        skills
+            .iter()
+            .map(|skill| format!("- {}: {}", skill.name, skill.description))
+            .collect::<Vec<String>>()
+            .join("\n")
+    );
+
+    conversation.messages.push(json!({
+        "role": "system",
+        "content": skill_message
+    }));
     conversation.messages.push(json!({
         "role": "user",
         "content": &prompt.to_string(),
