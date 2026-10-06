@@ -100,9 +100,19 @@ impl SkillLoader for FileSystemSkillLoader {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{io::ErrorKind, path::PathBuf};
 
     use crate::skills::{FileSystemSkillLoader, Skill, SkillLoader};
+
+    #[test]
+    fn should_detect_malformed_skills() {
+        let path = PathBuf::from("test_skills/malformed/bad/SKILL.md");
+
+        let error = FileSystemSkillLoader::extract_skill(path.as_path())
+            .expect_err("malformed YAML frontmatter should be rejected");
+
+        assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
 
     #[test]
     fn should_load_skills_from_the_disk() {
