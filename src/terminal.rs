@@ -1,7 +1,4 @@
-use std::{
-    io::{BufRead, Error, Write},
-    path::{Path, PathBuf},
-};
+use std::io::{BufRead, Error, Write};
 
 use serde_json::json;
 
@@ -94,7 +91,7 @@ mod tests {
 
     use crate::{
         agent,
-        skills::{Skill, SkillLoader},
+        skills::SkillLoader,
         terminal::{run_interactive, run_once},
     };
 
@@ -119,9 +116,9 @@ mod tests {
         }
     }
 
-    struct ScriptedSkillLoader {}
+    struct EmptySkillLoader {}
 
-    impl SkillLoader for ScriptedSkillLoader {
+    impl SkillLoader for EmptySkillLoader {
         fn load_skills(
             &self,
         ) -> Result<std::collections::HashMap<String, crate::skills::Skill>, std::io::Error>
@@ -142,7 +139,7 @@ mod tests {
             }]
         }));
 
-        let skill_loader = ScriptedSkillLoader {};
+        let skill_loader = EmptySkillLoader {};
 
         let mut output = Vec::new();
 
@@ -162,7 +159,7 @@ mod tests {
     async fn run_interactive_stops_on_eof() {
         let mut input = Cursor::new(b"");
         let model = ScriptedModel::new(json!("not used"));
-        let skill_loader = ScriptedSkillLoader {};
+        let skill_loader = EmptySkillLoader {};
         let mut output = Vec::new();
 
         let _: () = run_interactive(&model, &skill_loader, &mut input, &mut output)
@@ -186,7 +183,7 @@ mod tests {
             }]
         }));
 
-        let skill_loader = ScriptedSkillLoader {};
+        let skill_loader = EmptySkillLoader {};
 
         let mut output = Vec::new();
         let mut input = Cursor::new(b"Hello.\nGoodbye.\n");
@@ -235,7 +232,7 @@ mod tests {
             }]
         }));
 
-        let skill_loader = ScriptedSkillLoader {};
+        let skill_loader = EmptySkillLoader {};
 
         let mut input = Cursor::new(b"Hello.\n/exit\n");
         let mut output = Vec::new();
@@ -263,7 +260,7 @@ mod tests {
             }]
         }));
 
-        let skill_loader = ScriptedSkillLoader {};
+        let skill_loader = EmptySkillLoader {};
 
         let mut input = Cursor::new(b"Hello.\n/quit\n");
         let mut output = Vec::new();

@@ -1,4 +1,3 @@
-use crate::skills::FileSystemSkillLoader;
 use crate::tools::{execute_tool_call, specs};
 use crate::wire::ChatResponse;
 use async_openai::Client;

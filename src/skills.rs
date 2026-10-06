@@ -8,7 +8,7 @@ use std::{
 use gray_matter::{Matter, ParsedEntity, engine::YAML};
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Skill {
     pub name: String,
     pub description: String,
@@ -63,19 +63,36 @@ impl SkillLoader for FileSystemSkillLoader {
         let entries = self.skill_root.read_dir()?;
 
         for entry in entries {
-            if let Ok(entry) = entry
-                && entry.path().is_dir()
-            {
-                let skills_file = entry.path().join("SKILL.md");
-                let skill = match FileSystemSkillLoader::extract_skill(&skills_file) {
-                    Err(_) => {
-                        continue;
-                    }
-                    Ok(skill) => skill,
-                };
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => {
+                    tracing::warn!(
+                        skill_root = %self.skill_root.display(),
+                        error = %error,
+                        "skipping unreadable skill directory entry"
+                    );
+                    continue;
+                }
+            };
 
-                skills_by_name.insert(skill.name.clone(), skill);
+            if !entry.path().is_dir() {
+                continue;
             }
+
+            let skills_file = entry.path().join("SKILL.md");
+            let skill = match FileSystemSkillLoader::extract_skill(&skills_file) {
+                Err(error) => {
+                    tracing::warn!(
+                        skill_file = %skills_file.display(),
+                        error = %error,
+                        "skipping skill that could not be loaded"
+                    );
+                    continue;
+                }
+                Ok(skill) => skill,
+            };
+
+            skills_by_name.insert(skill.name.clone(), skill);
         }
         Ok(skills_by_name)
     }
