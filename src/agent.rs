@@ -24,17 +24,18 @@ impl Model for Client<OpenAIConfig> {
 }
 
 fn expand_skill_prompt(prompt: &str, skills_by_name: &BTreeMap<String, Skill>) -> String {
-    if prompt.starts_with("/") {
-        if let Some(first_token) = prompt.split_whitespace().next() {
-            if let Some(skill_name) = first_token.strip_prefix('/') {
-                if let Some(skill) = skills_by_name.get(skill_name) {
-                    return skill.content.clone();
-                }
-            }
-        }
-    }
+    let Some(command) = prompt.split_whitespace().next() else {
+        return prompt.to_string();
+    };
 
-    prompt.to_string()
+    let Some(skill_name) = command.strip_prefix('/') else {
+        return prompt.to_string();
+    };
+
+    match skills_by_name.get(skill_name) {
+        Some(skill) => skill.content.clone(),
+        None => prompt.to_string(),
+    }
 }
 
 pub async fn turn<M: Model>(
