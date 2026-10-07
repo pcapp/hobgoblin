@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use crate::session::Session;
+use crate::skills::Skill;
 use crate::tools::{execute_tool_call, specs};
 use crate::wire::ChatResponse;
 use async_openai::Client;
@@ -20,6 +23,20 @@ impl Model for Client<OpenAIConfig> {
     }
 }
 
+fn expand_skill_prompt(prompt: &str, skills_by_name: &BTreeMap<String, Skill>) -> String {
+    if prompt.starts_with("/") {
+        if let Some(first_token) = prompt.split_whitespace().next() {
+            if let Some(skill_name) = first_token.strip_prefix('/') {
+                if let Some(skill) = skills_by_name.get(skill_name) {
+                    return skill.content.clone();
+                }
+            }
+        }
+    }
+
+    prompt.to_string()
+}
+
 pub async fn turn<M: Model>(
     client: &M,
     session: &mut Session,
@@ -27,9 +44,10 @@ pub async fn turn<M: Model>(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let tools = specs();
 
+    let expanded_prompt = expand_skill_prompt(prompt, &session.skills_by_name);
     session.conversation.messages.push(json!({
         "role": "user",
-        "content": &prompt.to_string(),
+        "content": &expanded_prompt.to_string(),
     }));
 
     const MAX_LOOPS: u8 = 10;

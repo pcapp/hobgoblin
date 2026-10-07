@@ -1,6 +1,4 @@
-use std::io::{BufRead, Error, Write};
-
-use serde_json::json;
+use std::io::{BufRead, Write};
 
 use crate::{
     agent::{self},
@@ -8,37 +6,13 @@ use crate::{
     skills::SkillLoader,
 };
 
-fn create_new_session<L: SkillLoader>(skill_loader: &L) -> Result<Session, Error> {
-    let mut session = Session::new(skill_loader)?;
-
-    let skills_by_name = skill_loader.load_skills()?;
-
-    let skill_message = format!(
-        "You have access to the following skills:\n\n{}",
-        skills_by_name
-            .iter()
-            .map(|(name, skill)| format!("- {}: {}", name, skill.description))
-            .collect::<Vec<String>>()
-            .join("\n")
-    );
-
-    if !skills_by_name.is_empty() {
-        session.conversation.messages.push(json!({
-            "role": "system",
-            "content": skill_message
-        }));
-    }
-
-    Ok(session)
-}
-
 pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     client: &M,
     skill_loader: &L,
     output: &mut W,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = create_new_session(skill_loader)?;
+    let mut conversation = Session::new(skill_loader)?;
 
     let response = agent::turn(client, &mut conversation, prompt).await?;
     writeln!(output, "{response}")?;
@@ -53,7 +27,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = create_new_session(skill_loader)?;
+    let mut conversation = Session::new(skill_loader)?;
 
     let mut user_input = String::new();
     loop {
@@ -86,11 +60,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        io::Cursor,
-        sync::Mutex,
-    };
+    use std::{collections::BTreeMap, io::Cursor, sync::Mutex};
 
     use serde_json::{Value, json};
 
