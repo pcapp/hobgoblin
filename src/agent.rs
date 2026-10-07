@@ -1,3 +1,4 @@
+use crate::session::Session;
 use crate::tools::{execute_tool_call, specs};
 use crate::wire::ChatResponse;
 use async_openai::Client;
@@ -21,12 +22,12 @@ impl Model for Client<OpenAIConfig> {
 
 pub async fn turn<M: Model>(
     client: &M,
-    conversation: &mut Conversation,
+    session: &mut Session,
     prompt: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let tools = specs();
 
-    conversation.messages.push(json!({
+    session.conversation.messages.push(json!({
         "role": "user",
         "content": &prompt.to_string(),
     }));
@@ -35,14 +36,14 @@ pub async fn turn<M: Model>(
 
     for _ in 0..MAX_LOOPS {
         let request = json!({
-            "messages": conversation.messages,
+            "messages": session.conversation.messages,
             "model": "anthropic/claude-haiku-4.5",
             "tools": tools,
         });
 
         tracing::debug!(
           event = "llm_request",
-          n_messages = conversation.messages.len(),
+          n_messages = session.conversation.messages.len(),
           payload = %request,
         );
 
@@ -62,7 +63,7 @@ pub async fn turn<M: Model>(
 
         let message = &choice.message;
 
-        conversation.messages.push(raw_message);
+        session.conversation.messages.push(raw_message);
 
         let tool_calls = message.tool_calls.as_deref().unwrap_or_default();
 
@@ -80,7 +81,7 @@ pub async fn turn<M: Model>(
                 eprintln!("Tool call error: {}", error);
             }
 
-            conversation.messages.push(json!({
+            session.conversation.messages.push(json!({
               "role": "tool",
               "tool_call_id": tool_call.id,
               "content": result.to_string()
@@ -97,7 +98,7 @@ pub async fn turn<M: Model>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, VecDeque};
 
     use super::*;
     use std::sync::Mutex;
@@ -140,9 +141,12 @@ mod tests {
             }]
         })]);
 
-        let mut conversation = Conversation::default();
+        let mut session = Session {
+            conversation: Conversation::default(),
+            skills_by_name: BTreeMap::new(),
+        };
 
-        let answer = turn(&model, &mut conversation, "Hello, world!")
+        let answer = turn(&model, &mut session, "Hello, world!")
             .await
             .expect("turn should succeed");
 
@@ -172,13 +176,16 @@ mod tests {
             }),
         ]);
 
-        let mut conversation = Conversation::default();
+        let mut session = Session {
+            conversation: Conversation::default(),
+            skills_by_name: BTreeMap::new(),
+        };
 
-        turn(&model, &mut conversation, "first question")
+        turn(&model, &mut session, "first question")
             .await
             .expect("first turn should succeed");
 
-        turn(&model, &mut conversation, "second question")
+        turn(&model, &mut session, "second question")
             .await
             .expect("second turn should succeed");
 
@@ -228,14 +235,21 @@ mod tests {
             }),
         ]);
 
-        let mut first_conversation = Conversation::default();
-        let mut second_conversation = Conversation::default();
+        let mut first_session = Session {
+            conversation: Conversation::default(),
+            skills_by_name: BTreeMap::new(),
+        };
 
-        turn(&model, &mut first_conversation, "first question")
+        let mut second_session = Session {
+            conversation: Conversation::default(),
+            skills_by_name: BTreeMap::new(),
+        };
+
+        turn(&model, &mut first_session, "first question")
             .await
             .expect("first conversation should succeed");
 
-        turn(&model, &mut second_conversation, "second question")
+        turn(&model, &mut second_session, "second question")
             .await
             .expect("second conversation should succeed");
 

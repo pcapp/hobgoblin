@@ -1,5 +1,6 @@
 mod acp;
 mod agent;
+mod session;
 mod skills;
 mod terminal;
 mod tools;

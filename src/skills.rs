@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap},
     fs,
     io::{Error, ErrorKind},
     path::{Path, PathBuf},
@@ -22,7 +22,7 @@ struct FrontMatter {
 }
 
 pub trait SkillLoader {
-    fn load_skills(&self) -> Result<HashMap<String, Skill>, Error>;
+    fn load_skills(&self) -> Result<BTreeMap<String, Skill>, Error>;
 }
 
 pub struct FileSystemSkillLoader {
@@ -54,8 +54,8 @@ impl FileSystemSkillLoader {
 }
 
 impl SkillLoader for FileSystemSkillLoader {
-    fn load_skills(&self) -> Result<HashMap<String, Skill>, Error> {
-        let mut skills_by_name: HashMap<String, Skill> = HashMap::new();
+    fn load_skills(&self) -> Result<BTreeMap<String, Skill>, Error> {
+        let mut skills_by_name: BTreeMap<String, Skill> = BTreeMap::new();
         if !fs::exists(&self.skill_root)? {
             return Ok(skills_by_name);
         }

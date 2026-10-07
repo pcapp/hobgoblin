@@ -3,12 +3,13 @@ use std::io::{BufRead, Error, Write};
 use serde_json::json;
 
 use crate::{
-    agent::{self, Conversation},
+    agent::{self},
+    session::Session,
     skills::SkillLoader,
 };
 
-fn make_conversation<L: SkillLoader>(skill_loader: &L) -> Result<Conversation, Error> {
-    let mut conversation = Conversation::default();
+fn create_new_session<L: SkillLoader>(skill_loader: &L) -> Result<Session, Error> {
+    let mut session = Session::new(skill_loader)?;
 
     let skills_by_name = skill_loader.load_skills()?;
 
@@ -22,13 +23,13 @@ fn make_conversation<L: SkillLoader>(skill_loader: &L) -> Result<Conversation, E
     );
 
     if !skills_by_name.is_empty() {
-        conversation.messages.push(json!({
+        session.conversation.messages.push(json!({
             "role": "system",
             "content": skill_message
         }));
     }
 
-    Ok(conversation)
+    Ok(session)
 }
 
 pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
@@ -37,7 +38,7 @@ pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     output: &mut W,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = make_conversation(skill_loader)?;
+    let mut conversation = create_new_session(skill_loader)?;
 
     let response = agent::turn(client, &mut conversation, prompt).await?;
     writeln!(output, "{response}")?;
@@ -52,7 +53,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = make_conversation(skill_loader)?;
+    let mut conversation = create_new_session(skill_loader)?;
 
     let mut user_input = String::new();
     loop {
@@ -85,7 +86,11 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io::Cursor, sync::Mutex};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        io::Cursor,
+        sync::Mutex,
+    };
 
     use serde_json::{Value, json};
 
@@ -121,9 +126,9 @@ mod tests {
     impl SkillLoader for EmptySkillLoader {
         fn load_skills(
             &self,
-        ) -> Result<std::collections::HashMap<String, crate::skills::Skill>, std::io::Error>
+        ) -> Result<std::collections::BTreeMap<String, crate::skills::Skill>, std::io::Error>
         {
-            Ok(HashMap::new())
+            Ok(BTreeMap::new())
         }
     }
 
