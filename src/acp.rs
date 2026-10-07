@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 #[derive(Deserialize)]
 struct Request<T> {
@@ -43,8 +43,22 @@ fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-pub async fn run_acp<R: AsyncBufRead + Unpin>(
+async fn write_frame<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &Value,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut frame = serde_json::to_vec(value)?;
+    frame.push(b'\n');
+
+    writer.write_all(&frame).await?;
+    writer.flush().await?;
+
+    Ok(())
+}
+
+pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut R,
+    _writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
 
@@ -87,9 +101,37 @@ pub async fn run_acp<R: AsyncBufRead + Unpin>(
 mod tests {
     use std::io::Cursor;
 
-    use serde_json::Value;
+    use serde::Serialize;
+    use serde_json::{Value, json};
+    use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
-    use crate::acp::{MAX_FRAME_BYTES, Request, run_acp, validate_request};
+    use crate::acp::{MAX_FRAME_BYTES, Request, run_acp, validate_request, write_frame};
+
+    #[tokio::test]
+    async fn writes_one_compact_newline_terminated_frame_and_flushes() {
+        let value = serde_json::json!({
+            "result": {
+                "protocolVersion": 1
+            }
+        });
+
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        write_frame(&mut agent_output, &value)
+            .await
+            .expect("frame should be written successfully.");
+        drop(agent_output);
+
+        let mut received = String::new();
+        client_end
+            .read_to_string(&mut received)
+            .await
+            .expect("client should read the frame");
+
+        assert_eq!(received, "{\"result\":{\"protocolVersion\":1}}\n");
+    }
 
     fn valid_request_frame_with_size(size: usize) -> String {
         let request = serde_json::json!({
@@ -111,8 +153,9 @@ mod tests {
     #[tokio::test]
     async fn clean_eof_exits_successfully() {
         let mut reader = Cursor::new(b"");
+        let mut writer = tokio::io::sink();
 
-        run_acp(&mut reader)
+        run_acp(&mut reader, &mut writer)
             .await
             .expect("clean EOF should end ACP mode successfully");
     }
@@ -138,8 +181,9 @@ mod tests {
     async fn frame_at_maximum_size_is_accepted() {
         let input = valid_request_frame_with_size(MAX_FRAME_BYTES);
         let mut reader = Cursor::new(input.as_bytes());
+        let mut writer = tokio::io::sink();
 
-        run_acp(&mut reader)
+        run_acp(&mut reader, &mut writer)
             .await
             .expect("a frame at the maximum size should be accepted");
     }
@@ -148,8 +192,9 @@ mod tests {
     async fn frame_over_maximum_size_is_rejected() {
         let input = valid_request_frame_with_size(MAX_FRAME_BYTES + 1);
         let mut reader = Cursor::new(input.as_bytes());
+        let mut writer = tokio::io::sink();
 
-        let error = run_acp(&mut reader)
+        let error = run_acp(&mut reader, &mut writer)
             .await
             .expect_err("an oversized frame should be rejected");
         let io_error = error
@@ -180,7 +225,8 @@ mod tests {
             .join("\n");
 
         let mut cursor = Cursor::new(input.as_bytes());
-        let error = run_acp(&mut cursor)
+        let mut writer = tokio::io::sink();
+        let error = run_acp(&mut cursor, &mut writer)
             .await
             .expect_err("unterminated frame should be rejected");
 
@@ -212,7 +258,10 @@ mod tests {
             + "\n";
 
         let mut cursor = Cursor::new(input.as_bytes());
-        run_acp(&mut cursor).await.expect("to read both messages");
+        let mut writer = tokio::io::sink();
+        run_acp(&mut cursor, &mut writer)
+            .await
+            .expect("to read both messages");
         assert_eq!(cursor.position() as usize, input.len());
     }
 
@@ -243,8 +292,9 @@ mod tests {
             serde_json::to_string(&init_request).expect("initialize message should serialize");
         input.push('\n');
         let mut reader = Cursor::new(&input);
+        let mut writer = tokio::io::sink();
 
-        run_acp(&mut reader)
+        run_acp(&mut reader, &mut writer)
             .await
             .expect("initialize request should succeed");
     }

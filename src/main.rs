@@ -41,7 +41,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if args.acp {
         let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
-        return acp::run_acp(&mut reader).await;
+        let mut writer = tokio::io::stdout();
+        return acp::run_acp(&mut reader, &mut writer).await;
     }
 
     dotenvy::dotenv().ok();

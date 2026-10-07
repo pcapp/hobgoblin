@@ -144,6 +144,32 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 2. Add compact newline-terminated response writing and explicit flushing before expanding dispatch.
 3. JSON-RPC classification and dispatch, initialization responses, unknown-method errors, and full checker acceptance remain unfinished.
 
+## Session checkpoint — 2026-10-06 (CodeCrafters skills)
+
+### Current understanding
+
+- Skills are loaded once into a per-session `BTreeMap`, which gives deterministic name ordering and avoids filesystem access on every turn.
+- `Session` owns both provider-visible conversation history and the loaded skill snapshot; `agent::turn` consumes shared session state, so terminal and future ACP prompts can use the same skill behavior.
+- Skill resolution belongs in the shared agent path rather than `terminal.rs`, because terminal and ACP are separate frontends.
+- A leading slash command resolves its first whitespace-separated token against the session snapshot; a recognized command replaces the provider-visible user prompt with only that skill's body.
+- Skill discovery still exposes only names and descriptions in the initial system message, so uninvoked skill bodies are not sent to the model.
+
+### Source checkpoint
+
+- `src/session.rs` constructs one session from a `SkillLoader`, retains the resulting skills, and adds the level-one skill summary.
+- `src/terminal.rs` creates one `Session` for one-shot or interactive use and no longer reloads skills separately.
+- `src/agent.rs` contains `expand_skill_prompt` and calls it before adding the user message.
+- `git status --short` reported no entries at checkpoint time.
+- The skill-expansion changes have not been validated since the final implementation was typed; no new focused tests or CodeCrafters stage run were completed in this session.
+
+### Exact resume point
+
+1. Read `expand_skill_prompt` and manually confirm the intended policies for an ordinary prompt, a recognized `/skill`, and an unknown slash command.
+2. Add focused coverage proving that only the invoked skill body reaches the model and that ordinary prompts remain unchanged.
+3. Add lifecycle coverage proving that an interactive session calls `SkillLoader::load_skills` once.
+4. Run `cargo fmt --all -- --check`, `cargo check --locked`, `cargo test --locked`, and the CodeCrafters `jd8` stage.
+5. After the CodeCrafters work is verified, resume ACP Task 3 at the output-boundary decision recorded in the previous checkpoint.
+
 ## Validation record
 
 Add one structured entry after validation:
