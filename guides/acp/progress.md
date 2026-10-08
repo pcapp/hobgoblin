@@ -201,6 +201,34 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 6. Continue with `initialize` parameter validation and dispatch, connect `write_frame`, preserve string and numeric request IDs, and implement unknown-method `-32601` responses.
 7. Finish Task 3 by running every command in `03-acp-initialize.md` and the subprocess handshake checker; record the report path and results.
 
+## Session checkpoint — 2026-10-08 (Task 3 initialize response)
+
+### Current understanding
+
+- JSON-RPC version is a common-envelope invariant, so `run_acp` validates it once before request, notification, or response classification; method-specific request validation remains separate.
+- `serde_json::Value::to_string` serializes JSON, including quotes around JSON strings; `Value::as_str` extracts a JSON string for comparison.
+- `serde_json::to_value` converts a serializable Rust value into `Value`, while `serde_json::from_value` deserializes a `Value` into a Rust type.
+- `SuccessResponse<T>` is a useful outgoing envelope because `T` can be the method-specific result while the JSON-RPC version and correlated ID remain common.
+- A function returning `SuccessResponse<S>` cannot construct one concrete response body while promising an arbitrary caller-selected `S`; combining request, response, writer, and serialization generics made the increment too large to reason about.
+- Wire-level tests should inspect the emitted `Value` independently rather than deserialize it with the same production type that serialized it.
+
+### Source checkpoint
+
+- Task 3 remains in progress on branch `initialize-acp` at commit `f059566`, tracking `origin/initialize-acp`; the working tree was clean before this ledger entry.
+- `run_acp` now dispatches `initialize`, preserves the request ID, builds a `SuccessResponse<Value>`, and connects production dispatch to `write_frame`.
+- The initialize response currently selects protocol version 1, emits an empty `agentCapabilities` object and empty `authMethods` array, and is covered by a wire-level response test.
+- `cargo check --locked` and the focused initialize-response test exited 0 on 2026-10-08; the focused test passed 1 test.
+- The test target still reports two warnings: unused imports for `serde_json::Value` and `SuccessResponse`. The response test also calls `validate_version` twice.
+- Initialize params are not yet deserialized or validated. Unknown request methods are still ignored, and the complete Task 3 suite and handshake checker remain unverified.
+
+### Exact resume point
+
+1. Make only the no-behavior-change test cleanup in `src/acp.rs`: remove the unused `serde_json::Value` and `SuccessResponse` imports and one duplicate `validate_version` call.
+2. Run `cargo fmt --all -- --check`, `cargo check --locked`, and the focused initialize-response test; confirm the warnings are gone.
+3. Before adding more dispatch behavior, decide the smallest `InitializeParams` representation that enforces required `protocolVersion` and object-shaped `clientCapabilities` while accepting ACP extension fields.
+4. Add focused missing/invalid initialize-params coverage, then deserialize params only inside the `"initialize"` branch.
+5. Preserve the current working response before proceeding to string-ID coverage and unknown-method `-32601` responses.
+
 ## Validation record
 
 Add one structured entry after validation:

@@ -138,24 +138,21 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                match request.method.as_str() {
-                    "initialize" => {
-                        let result = serde_json::json!({
-                            "protocolVersion": 1,
-                            "agentCapabilities": {},
-                            "authMethods": []
-                        });
+                if request.method == "initialize" {
+                    let result = serde_json::json!({
+                        "protocolVersion": 1,
+                        "agentCapabilities": {},
+                        "authMethods": []
+                    });
 
-                        let response = SuccessResponse {
-                            jsonrpc: String::from("2.0"),
-                            id: request.id,
-                            result,
-                        };
+                    let response = SuccessResponse {
+                        jsonrpc: String::from("2.0"),
+                        id: request.id,
+                        result,
+                    };
 
-                        let response = serde_json::to_value(response)?;
-                        write_frame(writer, &response).await?;
-                    }
-                    _ => {}
+                    let response = serde_json::to_value(response)?;
+                    write_frame(writer, &response).await?;
                 }
             }
             MessageKind::Notification | MessageKind::Response => {}
@@ -169,12 +166,10 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
 mod tests {
     use std::io::Cursor;
 
-    use serde_json::Value;
     use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
     use crate::acp::{
-        MAX_FRAME_BYTES, MessageKind, SuccessResponse, classify_message, run_acp, validate_version,
-        write_frame,
+        MAX_FRAME_BYTES, MessageKind, classify_message, run_acp, validate_version, write_frame,
     };
 
     #[tokio::test]
@@ -571,7 +566,6 @@ mod tests {
         let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
             .expect("to be a valid message");
 
-        validate_version(&result).expect("to be version 2.0");
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
         assert_eq!(result["id"], serde_json::json!(0));

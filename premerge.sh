@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
+
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D
+cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
