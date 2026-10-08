@@ -16,6 +16,21 @@ struct Request<T> {
     params: Option<T>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitializeParams {
+    #[allow(dead_code)]
+    client_info: Option<Implementation>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct Implementation {
+    name: String,
+    title: Option<String>,
+    version: String,
+}
+
 #[derive(Serialize)]
 struct SuccessResponse<T> {
     jsonrpc: String,
@@ -99,7 +114,6 @@ fn validate_version(value: &Value) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-#[allow(dead_code)]
 async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     value: &Value,
@@ -167,6 +181,24 @@ async fn dispatch<W: AsyncWrite + Unpin>(
     request: Request<Value>,
 ) -> Result<(), Box<dyn Error + 'static>> {
     if request.method == "initialize" {
+        let params = request.params.unwrap_or(Value::Null);
+
+        if serde_json::from_value::<InitializeParams>(params).is_err() {
+            let response = ErrorResponse {
+                jsonrpc: String::from("2.0"),
+                id: request.id,
+                error: ResponseError {
+                    code: -32602,
+                    message: String::from("Invalid params"),
+                },
+            };
+
+            let response = serde_json::to_value(response)?;
+            write_frame(writer, &response).await?;
+
+            return Ok(());
+        }
+
         let result = serde_json::json!({
             "protocolVersion": 1,
             "agentCapabilities": {},
@@ -654,5 +686,54 @@ mod tests {
         let error = &result["error"];
         assert_eq!(error["code"], -32601);
         assert_eq!(error["message"], "Method not found")
+    }
+
+    #[tokio::test]
+    async fn responds_with_invalid_params_when_client_info_is_missing_name() {
+        let request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+              "clientCapabilities": {},
+              "clientInfo": {
+                  "version": "1.0.0"
+              }
+          }
+        });
+
+        let mut input = serde_json::to_string(&request).expect("request should serialize");
+        input.push('\n');
+        let mut reader = Cursor::new(&input);
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        run_acp(&mut reader, &mut agent_output)
+            .await
+            .expect("request should succeed");
+
+        drop(agent_output);
+        let mut received = Vec::new();
+        client_end
+            .read_to_end(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
+            .expect("to be a valid message");
+
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(1));
+        assert!(
+            result.get("result").is_none(),
+            "a error response must not contain an result"
+        );
+
+        let error = &result["error"];
+        assert_eq!(error["code"], -32602);
+        assert_eq!(error["message"], "Invalid params")
     }
 }
