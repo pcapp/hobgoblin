@@ -525,10 +525,24 @@ mod tests {
             serde_json::to_string(&init_request).expect("initialize message should serialize");
         input.push('\n');
         let mut reader = Cursor::new(&input);
-        let mut writer = tokio::io::sink();
+        let (mut client_end, agent_end) = duplex(1024);
 
-        run_acp(&mut reader, &mut writer)
+        let mut agent_output = BufWriter::new(agent_end);
+
+        run_acp(&mut reader, &mut agent_output)
             .await
             .expect("initialize request should succeed");
+
+        drop(agent_output);
+        let mut received = Vec::new();
+        client_end
+            .read_to_end(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
+            .expect("to be a valid message");
+
+        validate_version(&result).expect("to be version 2.0");
     }
 }
