@@ -5,7 +5,6 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 
 #[derive(Deserialize)]
 struct Request<T> {
-    jsonrpc: String,
     id: Value,
 
     #[allow(dead_code)]
@@ -13,11 +12,6 @@ struct Request<T> {
 
     #[allow(dead_code)]
     params: Option<T>,
-}
-
-#[derive(Deserialize)]
-struct Notification {
-    jsonrpc: String,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -55,14 +49,6 @@ fn classify_message(value: &Value) -> Result<MessageKind, Box<dyn std::error::Er
 }
 
 fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::Error>> {
-    if request.jsonrpc != "2.0" {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "expected JSON-RPC version 2.0",
-        )
-        .into());
-    }
-
     let is_supported_id = match &request.id {
         Value::String(_) => true,
         Value::Number(number) => number.is_u64() || number.is_i64(),
@@ -80,16 +66,15 @@ fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-fn validate_notification(notification: &Notification) -> Result<(), Box<dyn std::error::Error>> {
-    if notification.jsonrpc != "2.0" {
-        return Err(std::io::Error::new(
+fn validate_version(value: &Value) -> Result<(), Box<dyn std::error::Error>> {
+    match value.get("jsonrpc").and_then(|version| version.as_str()) {
+        Some("2.0") => Ok(()),
+        _ => Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "expected JSON-RPC version 2.0",
         )
-        .into());
+        .into()),
     }
-
-    Ok(())
 }
 
 #[allow(dead_code)]
@@ -141,16 +126,13 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
         }
 
         let message: Value = serde_json::from_str(&input)?;
+        validate_version(&message)?;
         match classify_message(&message)? {
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
             }
-            MessageKind::Notification => {
-                let notification: Notification = serde_json::from_str(&input)?;
-                validate_notification(&notification)?;
-            }
-            MessageKind::Response => {}
+            MessageKind::Notification | MessageKind::Response => {}
         }
     }
 
@@ -161,12 +143,10 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
 mod tests {
     use std::io::Cursor;
 
-    use serde_json::Value;
     use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
     use crate::acp::{
-        MAX_FRAME_BYTES, MessageKind, Request, classify_message, run_acp, validate_request,
-        write_frame,
+        MAX_FRAME_BYTES, MessageKind, classify_message, run_acp, validate_version, write_frame,
     };
 
     #[tokio::test]
@@ -216,6 +196,27 @@ mod tests {
         let error = run_acp(&mut input, &mut output)
             .await
             .expect_err("notification should be rejected");
+
+        assert_eq!(error.to_string(), "expected JSON-RPC version 2.0")
+    }
+
+    #[tokio::test]
+    async fn invalid_jsonrpc_response() {
+        let response = serde_json::json!({
+            "jsonrpc": "1.0",
+            "id": "1",
+            "error": {}
+        });
+
+        let mut frame = serde_json::to_vec(&response).expect("response should serialize");
+        frame.push(b'\n');
+
+        let mut input = Cursor::new(frame);
+        let mut output = tokio::io::sink();
+
+        let error = run_acp(&mut input, &mut output)
+            .await
+            .expect_err("response should be rejected");
 
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0")
     }
@@ -403,10 +404,7 @@ mod tests {
             "method": "initialize",
         });
 
-        let request: Request<Value> =
-            serde_json::from_value(request).expect("fixture should be a valid request shape");
-
-        let error = validate_request(&request)
+        let error = validate_version(&request)
             .expect_err("JSON-RPC versions other than 2.0 should be rejected");
 
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
