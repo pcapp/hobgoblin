@@ -21,6 +21,19 @@ struct SuccessResponse<T> {
     result: T,
 }
 
+#[derive(Serialize)]
+struct ErrorResponse {
+    jsonrpc: String,
+    id: Value,
+    error: ResponseError,
+}
+
+#[derive(Serialize)]
+struct ResponseError {
+    code: i32,
+    message: String,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum MessageKind {
     Request,
@@ -151,6 +164,17 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
                         result,
                     };
 
+                    let response = serde_json::to_value(response)?;
+                    write_frame(writer, &response).await?;
+                } else {
+                    let response = ErrorResponse {
+                        jsonrpc: String::from("2.0"),
+                        id: request.id,
+                        error: ResponseError {
+                            code: -32601,
+                            message: String::from("Method not found"),
+                        },
+                    };
                     let response = serde_json::to_value(response)?;
                     write_frame(writer, &response).await?;
                 }
@@ -576,5 +600,48 @@ mod tests {
             result.get("error").is_none(),
             "a successful response must not contain an error"
         );
+    }
+
+    #[tokio::test]
+    async fn respond_to_unknown_methods() {
+        let request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "this is not real",
+          "params": {}
+        });
+
+        let mut input = serde_json::to_string(&request).expect("request should serialize");
+        input.push('\n');
+        let mut reader = Cursor::new(&input);
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        run_acp(&mut reader, &mut agent_output)
+            .await
+            .expect("request should succeed");
+
+        drop(agent_output);
+        let mut received = Vec::new();
+        client_end
+            .read_to_end(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
+            .expect("to be a valid message");
+
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(1));
+        assert!(
+            result.get("result").is_none(),
+            "a error response must not contain an result"
+        );
+
+        let error = &result["error"];
+        assert_eq!(error["code"], -32601);
+        assert_eq!(error["message"], "Method not found")
     }
 }
