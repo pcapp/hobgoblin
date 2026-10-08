@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -151,36 +153,45 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                if request.method == "initialize" {
-                    let result = serde_json::json!({
-                        "protocolVersion": 1,
-                        "agentCapabilities": {},
-                        "authMethods": []
-                    });
-
-                    let response = SuccessResponse {
-                        jsonrpc: String::from("2.0"),
-                        id: request.id,
-                        result,
-                    };
-
-                    let response = serde_json::to_value(response)?;
-                    write_frame(writer, &response).await?;
-                } else {
-                    let response = ErrorResponse {
-                        jsonrpc: String::from("2.0"),
-                        id: request.id,
-                        error: ResponseError {
-                            code: -32601,
-                            message: String::from("Method not found"),
-                        },
-                    };
-                    let response = serde_json::to_value(response)?;
-                    write_frame(writer, &response).await?;
-                }
+                dispatch(writer, request).await?;
             }
             MessageKind::Notification | MessageKind::Response => {}
         }
+    }
+
+    Ok(())
+}
+
+async fn dispatch<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    request: Request<Value>,
+) -> Result<(), Box<dyn Error + 'static>> {
+    if request.method == "initialize" {
+        let result = serde_json::json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {},
+            "authMethods": []
+        });
+
+        let response = SuccessResponse {
+            jsonrpc: String::from("2.0"),
+            id: request.id,
+            result,
+        };
+
+        let response = serde_json::to_value(response)?;
+        write_frame(writer, &response).await?;
+    } else {
+        let response = ErrorResponse {
+            jsonrpc: String::from("2.0"),
+            id: request.id,
+            error: ResponseError {
+                code: -32601,
+                message: String::from("Method not found"),
+            },
+        };
+        let response = serde_json::to_value(response)?;
+        write_frame(writer, &response).await?;
     }
 
     Ok(())
