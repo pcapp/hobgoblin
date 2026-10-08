@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -12,6 +12,13 @@ struct Request<T> {
 
     #[allow(dead_code)]
     params: Option<T>,
+}
+
+#[derive(Serialize)]
+struct SuccessResponse<T> {
+    jsonrpc: String,
+    id: Value,
+    result: T,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -93,7 +100,7 @@ async fn write_frame<W: AsyncWrite + Unpin>(
 
 pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
     reader: &mut R,
-    _writer: &mut W,
+    writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
 
@@ -131,6 +138,25 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
+                match request.method.as_str() {
+                    "initialize" => {
+                        let result = serde_json::json!({
+                            "protocolVersion": 1,
+                            "agentCapabilities": {},
+                            "authMethods": []
+                        });
+
+                        let response = SuccessResponse {
+                            jsonrpc: String::from("2.0"),
+                            id: request.id,
+                            result,
+                        };
+
+                        let response = serde_json::to_value(response)?;
+                        write_frame(writer, &response).await?;
+                    }
+                    _ => {}
+                }
             }
             MessageKind::Notification | MessageKind::Response => {}
         }
@@ -143,10 +169,12 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
 mod tests {
     use std::io::Cursor;
 
+    use serde_json::Value;
     use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
     use crate::acp::{
-        MAX_FRAME_BYTES, MessageKind, classify_message, run_acp, validate_version, write_frame,
+        MAX_FRAME_BYTES, MessageKind, SuccessResponse, classify_message, run_acp, validate_version,
+        write_frame,
     };
 
     #[tokio::test]
@@ -544,5 +572,15 @@ mod tests {
             .expect("to be a valid message");
 
         validate_version(&result).expect("to be version 2.0");
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(0));
+        assert_eq!(result["result"]["protocolVersion"], serde_json::json!(1));
+        assert!(result["result"]["agentCapabilities"].is_object());
+        assert_eq!(result["result"]["authMethods"], serde_json::json!([]));
+        assert!(
+            result.get("error").is_none(),
+            "a successful response must not contain an error"
+        );
     }
 }
