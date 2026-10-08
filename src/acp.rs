@@ -15,6 +15,11 @@ struct Request<T> {
     params: Option<T>,
 }
 
+#[derive(Deserialize)]
+struct Notification {
+    jsonrpc: String,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum MessageKind {
     Request,
@@ -75,6 +80,19 @@ fn validate_request(request: &Request<Value>) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+fn validate_notification(notification: &Notification) -> Result<(), Box<dyn std::error::Error>> {
+    if notification.jsonrpc != "2.0" {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "expected JSON-RPC version 2.0",
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+#[allow(dead_code)]
 async fn write_frame<W: AsyncWrite + Unpin>(
     writer: &mut W,
     value: &Value,
@@ -128,7 +146,11 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
             }
-            MessageKind::Response | MessageKind::Notification => {}
+            MessageKind::Notification => {
+                let notification: Notification = serde_json::from_str(&input)?;
+                validate_notification(&notification)?;
+            }
+            MessageKind::Response => {}
         }
     }
 
@@ -140,7 +162,7 @@ mod tests {
     use std::io::Cursor;
 
     use serde_json::Value;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, duplex};
+    use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
     use crate::acp::{
         MAX_FRAME_BYTES, MessageKind, Request, classify_message, run_acp, validate_request,
@@ -176,6 +198,26 @@ mod tests {
             received.is_empty(),
             "notifications must not receive a response"
         );
+    }
+
+    #[tokio::test]
+    async fn invalid_jsonrpc_notification() {
+        let notification = serde_json::json!({
+            "jsonrpc": "1.0",
+            "method": "initialized"
+        });
+
+        let mut frame = serde_json::to_vec(&notification).expect("notification should serialize");
+        frame.push(b'\n');
+
+        let mut input = Cursor::new(frame);
+        let mut output = tokio::io::sink();
+
+        let error = run_acp(&mut input, &mut output)
+            .await
+            .expect_err("notification should be rejected");
+
+        assert_eq!(error.to_string(), "expected JSON-RPC version 2.0")
     }
 
     #[test]
