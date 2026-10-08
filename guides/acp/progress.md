@@ -170,6 +170,37 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 4. Run `cargo fmt --all -- --check`, `cargo check --locked`, `cargo test --locked`, and the CodeCrafters `jd8` stage.
 5. After the CodeCrafters work is verified, resume ACP Task 3 at the output-boundary decision recorded in the previous checkpoint.
 
+## Session checkpoint — 2026-10-07 (Task 3 classification)
+
+### Current understanding
+
+- ACP stdio needs newline framing because an async byte stream does not preserve message boundaries.
+- `AsyncBufRead` supports delimiter-oriented operations by retaining bytes across partial reads and preserving bytes after a delimiter.
+- JSON-RPC request, notification, and response envelopes must be classified before method-specific deserialization; notifications have no ID and receive no response.
+- A Tokio duplex stream can be modeled as two bounded directional byte queues. An empty open stream means "wait," while an empty closed stream means EOF.
+- Flushing pushes bytes held by a buffered writer into its underlying async writer; it does not prove that the peer processed them.
+- `Cursor` is the simplest seam for predetermined finite input, while `duplex` is useful when output or live two-way behavior must be observed.
+- Future milestone work will happen on feature branches; strict formatting, Clippy, and test checks should gate completed work before it merges into `master`, while pull requests remain optional for this solo repository.
+
+### Source checkpoint
+
+- Task 3 remains in progress on `master` at commit `0b8c668`; the working tree was clean before this checkpoint entry.
+- `src/acp.rs` has bounded async input framing, an injected async writer, compact newline-terminated frame writing with flushing, JSON-RPC shape classification, and a notification no-response regression test.
+- `run_acp` parses each frame into `Value`, classifies it, validates request envelopes through the existing `Request<Value>` path, and ignores notifications and responses as required at this stage.
+- `write_frame` is tested but is not yet connected to production dispatch, so the production writer parameter remains intentionally unused.
+- The focused classifier suite passed all 10 tests earlier in the session. The complete acceptance suite and external handshake checker have not been run against the current tree.
+- The blocking GitHub formatting and Clippy job was removed; GitHub CI now runs only the existing test matrix.
+
+### Exact resume point
+
+1. Establish the feature-branch workflow for the remainder of Task 3 and add one convenient local command or Zed task that runs the pre-merge quality checks.
+2. Restore strict formatting, Clippy, and test checks for pull requests before merging the completed feature branch; configure a GitHub ruleset if those checks should technically block merges rather than merely report failures.
+3. Demonstrate that a notification with `"jsonrpc":"1.0"` is currently accepted, confirming the common-envelope validation gap.
+4. Add common JSON-RPC version validation for every classified message without moving method-specific validation into the shape classifier.
+5. Add focused coverage for valid and invalid protocol versions, then run the ACP test subset.
+6. Continue with `initialize` parameter validation and dispatch, connect `write_frame`, preserve string and numeric request IDs, and implement unknown-method `-32601` responses.
+7. Finish Task 3 by running every command in `03-acp-initialize.md` and the subprocess handshake checker; record the report path and results.
+
 ## Validation record
 
 Add one structured entry after validation:
