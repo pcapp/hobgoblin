@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Request<T> {
     id: Value,
 
@@ -16,16 +16,43 @@ struct Request<T> {
     params: Option<T>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct InitializeParams {
-    #[allow(dead_code)]
     protocol_version: u16,
-    #[allow(dead_code)]
+
     client_info: Option<Implementation>,
+
+    #[serde(default)]
+    client_capabilities: ClientCapabilities,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+#[allow(dead_code)]
+struct FileSystemCapabilities {
+    read_text_file: bool,
+    write_text_file: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[allow(dead_code)]
+#[serde(default)]
+struct AuthCapabilities {
+    terminal: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+#[allow(dead_code)]
+struct ClientCapabilities {
+    fs: FileSystemCapabilities,
+    auth: AuthCapabilities,
+    terminal: bool,
+}
+
+#[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct Implementation {
     name: String,
@@ -238,8 +265,30 @@ mod tests {
     use tokio::io::{AsyncReadExt, BufWriter, duplex};
 
     use crate::acp::{
-        MAX_FRAME_BYTES, MessageKind, classify_message, run_acp, validate_version, write_frame,
+        InitializeParams, MAX_FRAME_BYTES, MessageKind, Request, classify_message, run_acp,
+        validate_version, write_frame,
     };
+
+    #[test]
+    fn omitted_client_capabilities_uses_default() {
+        let value = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        });
+
+        let request: Request<InitializeParams> =
+            serde_json::from_value(value).expect("to serialize");
+
+        let params = request.params.expect("to have client capabilities");
+        assert!(!params.client_capabilities.fs.read_text_file);
+        assert!(!params.client_capabilities.fs.write_text_file);
+        assert!(!params.client_capabilities.auth.terminal);
+        assert!(!params.client_capabilities.terminal);
+    }
 
     #[tokio::test]
     async fn initialize_must_have_a_protocol_version() {
@@ -284,6 +333,47 @@ mod tests {
         let error = &result["error"];
         assert_eq!(error["code"], -32602);
         assert_eq!(error["message"], "Invalid params")
+    }
+
+    #[tokio::test]
+    async fn can_initialize_without_specifying_client_capabilities() {
+        let request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        });
+
+        let mut input = serde_json::to_string(&request).expect("request should serialize");
+        input.push('\n');
+        let mut reader = Cursor::new(&input);
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        run_acp(&mut reader, &mut agent_output)
+            .await
+            .expect("request should succeed");
+
+        drop(agent_output);
+        let mut received = Vec::new();
+        client_end
+            .read_to_end(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
+            .expect("to be a valid message");
+
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(1));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
     }
 
     #[tokio::test]
