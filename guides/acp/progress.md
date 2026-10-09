@@ -20,7 +20,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 |---|---|---|---|
 | [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
-| [3 — ACP initialize](03-acp-initialize.md) | in progress | Real binary completes ACP initialization through Tokio stdio | Async input, bounded multi-frame reads, clean EOF, and unterminated-frame rejection are covered |
+| [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -280,6 +280,28 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 2. Add focused coverage for the chosen required/default behavior before adding the field to `InitializeParams`.
 3. After initialize parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary, rerun the checker, and add the structured validation record.
 
+## Session checkpoint — 2026-10-09 (Task 3 complete)
+
+### Current understanding
+
+- A field-level `#[serde(default)]` handles an omitted object property by calling that field type's `Default` implementation.
+- Deriving Rust's `Default` does not by itself tell Serde to default missing fields inside a present object; `#[serde(default)]` must also be applied at the appropriate nested deserialization boundary.
+- ACP's omitted `clientCapabilities` value defaults all known capabilities to disabled, while Serde's default unknown-field behavior preserves protocol extensibility.
+- `cargo test` and the stricter `./premerge.sh` are distinct gates because the latter also runs Clippy with warnings denied.
+
+### Source checkpoint
+
+- Task 3 is complete on branch `initialize-acp` at commit `2978a97`; the working tree was clean before this ledger entry.
+- `InitializeParams` validates required `protocolVersion`, optional `clientInfo`, and defaulted object-shaped `clientCapabilities` with nested filesystem, authentication, and terminal defaults.
+- The missing-`protocolVersion` regression test remains alongside focused default and wire-level omission coverage for `clientCapabilities`.
+- `./premerge.sh` exited 0 with all 41 tests passing.
+- Every explicit Task 3 local acceptance command exited 0, and the external checker passed all 7 cases with report `/tmp/acp-initialize-review.json`.
+
+### Exact resume point
+
+1. Before starting Task 4 implementation, refine `04-reader-writer-tasks.md` against the retained Task 3 transport and tests, as required by the roadmap.
+2. Begin Task 4 by reviewing its goal and the current `run_acp`, frame-reader, and frame-writer boundaries; no Task 3 work remains unverified.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -304,6 +326,18 @@ Exit statuses: 0; 0; 0; 0
 Tests run: 13
 Tests passed: 13
 Checker report path: none
+```
+
+```text
+Date: 2026-10-09
+Task: 3 — ACP initialize
+Commit or tree state: initialize-acp at 2978a97; working tree clean before guides/acp/progress.md was updated
+Commands: ./premerge.sh; cargo fmt --all -- --check; cargo check --locked; cargo test --locked; cargo build --locked; cargo run --locked -- --help; uv run --script guides/acp/check_handshake.py --report /tmp/acp-initialize-review.json --command /Users/peter/repos/hobgoblin/target/debug/hobgoblin --acp
+Exit statuses: 0; 0; 0; 0; 0; 0; 0
+Tests run: 41
+Tests passed: 41
+Checker cases passed: 7 of 7
+Checker report path: /tmp/acp-initialize-review.json
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.
