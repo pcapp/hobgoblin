@@ -20,6 +20,8 @@ struct Request<T> {
 #[serde(rename_all = "camelCase")]
 struct InitializeParams {
     #[allow(dead_code)]
+    protocol_version: u16,
+    #[allow(dead_code)]
     client_info: Option<Implementation>,
 }
 
@@ -238,6 +240,51 @@ mod tests {
     use crate::acp::{
         MAX_FRAME_BYTES, MessageKind, classify_message, run_acp, validate_version, write_frame,
     };
+
+    #[tokio::test]
+    async fn initialize_must_have_a_protocol_version() {
+        let request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "clientCapabilities": {},
+          }
+        });
+
+        let mut input = serde_json::to_string(&request).expect("request should serialize");
+        input.push('\n');
+        let mut reader = Cursor::new(&input);
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        run_acp(&mut reader, &mut agent_output)
+            .await
+            .expect("request should succeed");
+
+        drop(agent_output);
+        let mut received = Vec::new();
+        client_end
+            .read_to_end(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
+            .expect("to be a valid message");
+
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(1));
+        assert!(
+            result.get("result").is_none(),
+            "an error response must not contain a result"
+        );
+
+        let error = &result["error"];
+        assert_eq!(error["code"], -32602);
+        assert_eq!(error["message"], "Invalid params")
+    }
 
     #[tokio::test]
     async fn notification_produces_no_response() {
@@ -680,7 +727,7 @@ mod tests {
         assert_eq!(result["id"], serde_json::json!(1));
         assert!(
             result.get("result").is_none(),
-            "a error response must not contain an result"
+            "an error response must not contain a result"
         );
 
         let error = &result["error"];
@@ -729,7 +776,7 @@ mod tests {
         assert_eq!(result["id"], serde_json::json!(1));
         assert!(
             result.get("result").is_none(),
-            "a error response must not contain an result"
+            "an error response must not contain a result"
         );
 
         let error = &result["error"];

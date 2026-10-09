@@ -229,6 +229,57 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 4. Add focused missing/invalid initialize-params coverage, then deserialize params only inside the `"initialize"` branch.
 5. Preserve the current working response before proceeding to string-ID coverage and unknown-method `-32601` responses.
 
+## Session checkpoint — 2026-10-08 (Task 3 dispatch and client info)
+
+### Current understanding
+
+- Method dispatch is a useful boundary now that requests have two observable outcomes: `initialize` success and correlated `-32601` errors for unknown methods.
+- Separate `SuccessResponse<T>` and `ErrorResponse` types prevent constructing a response with both `result` and `error` or with neither.
+- `serde_json::from_value::<InitializeParams>` consumes a generic JSON value and applies the required/optional rules encoded by the target Serde type.
+- `Option<Implementation>` accepts omitted or null `clientInfo`; when the object is present, plain `String` fields make `name` and `version` required while `Option<String>` keeps `title` optional.
+- Unknown fields are ignored by Serde by default, which preserves ACP extensibility while the local type grows incrementally.
+- `cargo test` builds test artifacts but does not guarantee that `target/debug/hobgoblin` is current; run `cargo build --locked` before launching the subprocess checker against that path.
+
+### Source checkpoint
+
+- Task 3 remains in progress on branch `initialize-acp` at commit `acf6f92`, tracking `origin/initialize-acp`; the working tree was clean before this ledger entry.
+- `run_acp` delegates request handling to `dispatch`; initialize requests emit a typed success envelope, unknown methods emit correlated `-32601` errors, and malformed present `clientInfo` emits a correlated `-32602` error.
+- The latest commit adds `InitializeParams` and `Implementation` only for optional `clientInfo` validation; `protocolVersion` and `clientCapabilities` are not yet represented by the params type.
+- Diagnostics were clean. `./premerge.sh` exited 0 with formatting, strict Clippy, and all 38 tests passing.
+- After `cargo build --locked`, the external handshake checker passed all 7 cases and wrote `/tmp/acp-initialize-review.json`.
+- Task 3 is not complete: all explicit acceptance commands have not yet been run and recorded against the final tree, and initialize parameter validation remains incomplete.
+
+### Exact resume point
+
+1. In both error-response tests, change `"a error response must not contain an result"` to `"an error response must not contain a result"`; these assertion-message typos are the only review finding in commit `acf6f92`.
+2. Add one red wire-level test proving that an initialize request missing required `protocolVersion` receives correlated `-32602 Invalid params`; keep valid `clientCapabilities` and omit `clientInfo`, which is optional.
+3. Add `protocolVersion` to `InitializeParams` using the ACP schema's unsigned 16-bit range, then rerun the focused test and `./premerge.sh`.
+4. Decide separately how to represent object-shaped `clientCapabilities` and its schema default before adding that field.
+5. When parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary, rerun the checker, and add the structured validation record.
+
+## Session checkpoint — 2026-10-08 (Task 3 protocol version validation)
+
+### Current understanding
+
+- A required, non-`Option` Serde field makes a missing JSON property a deserialization error.
+- `#[serde(rename_all = "camelCase")]` maps Rust's `protocol_version` field to JSON's `protocolVersion` property.
+- `u16` enforces the ACP protocol version field's unsigned 16-bit range during deserialization.
+- Invalid method parameters are represented by a correlated JSON-RPC `-32602` response; handling them successfully does not make `run_acp` return a Rust error.
+
+### Source checkpoint
+
+- `InitializeParams` now requires `protocol_version: u16`.
+- A wire-level regression test proves that an initialize request missing `protocolVersion` receives correlated `-32602 Invalid params`.
+- The two error-response assertion-message typos are corrected.
+- The focused protocol-version test passed 1 test, and `./premerge.sh` exited 0 with formatting, strict Clippy, and all 39 tests passing.
+- The complete Task 3 acceptance commands and external handshake checker have not been rerun against this working tree.
+
+### Exact resume point
+
+1. Decide how to represent object-shaped `clientCapabilities` and its ACP schema default without tightening extension handling.
+2. Add focused coverage for the chosen required/default behavior before adding the field to `InitializeParams`.
+3. After initialize parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary, rerun the checker, and add the structured validation record.
+
 ## Validation record
 
 Add one structured entry after validation:
