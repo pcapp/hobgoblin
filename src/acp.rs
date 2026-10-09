@@ -196,7 +196,9 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                dispatch(writer, request).await?;
+                if let Some(response) = dispatch(request).await? {
+                    write_frame(writer, &response).await?;
+                }
             }
             MessageKind::Notification | MessageKind::Response => {}
         }
@@ -205,10 +207,7 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn dispatch<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    request: Request<Value>,
-) -> Result<(), Box<dyn Error + 'static>> {
+async fn dispatch(request: Request<Value>) -> Result<Option<Value>, Box<dyn Error + 'static>> {
     if request.method == "initialize" {
         let params = request.params.unwrap_or(Value::Null);
 
@@ -223,9 +222,8 @@ async fn dispatch<W: AsyncWrite + Unpin>(
             };
 
             let response = serde_json::to_value(response)?;
-            write_frame(writer, &response).await?;
 
-            return Ok(());
+            return Ok(Some(response));
         }
 
         let result = serde_json::json!({
@@ -241,7 +239,7 @@ async fn dispatch<W: AsyncWrite + Unpin>(
         };
 
         let response = serde_json::to_value(response)?;
-        write_frame(writer, &response).await?;
+        Ok(Some(response))
     } else {
         let response = ErrorResponse {
             jsonrpc: String::from("2.0"),
@@ -252,10 +250,8 @@ async fn dispatch<W: AsyncWrite + Unpin>(
             },
         };
         let response = serde_json::to_value(response)?;
-        write_frame(writer, &response).await?;
+        Ok(Some(response))
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

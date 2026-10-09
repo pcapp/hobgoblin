@@ -28,12 +28,26 @@ When every `Sender` is dropped, `recv()` returns `None`. This makes a natural sh
 
 `tokio::io::duplex` creates a connected pair of in-memory streams. A test can drive the transport as a client would without spawning a process. This only works if the transport accepts generic async readers and writers rather than calling `stdin()` and `stdout()` directly.
 
-## Before implementing, decide
+## Working design
 
-1. What type travels through the channel: serialized lines, `serde_json::Value`, or a typed outgoing-message enum?
-2. Who holds senders, and how does the last one get dropped at EOF?
-3. Which Tokio features does `tokio::sync` and `tokio::io::duplex` require?
-4. How does an error in the writer task (for example, a closed stdout) reach the main task?
+- The channel carries complete `serde_json::Value` messages.
+- Dispatch constructs complete JSON-RPC messages and returns `Result<Option<Value>, _>`.
+- `Some(value)` means the writer should emit a message; `None` means valid handling with no response.
+- The writer owns compact serialization, newline framing, writing, flushing, and the output stream.
+- During Task 4's sequential handling, the reader task owns the only sender. Reaching EOF drops that sender, allowing the writer to drain the queue and exit.
+
+## Decide when needed
+
+1. Which Tokio feature enables `tokio::sync::mpsc`?
+2. How does a writer-task error, such as closed stdout, reach the coordinating task?
+
+## Implementation order
+
+1. Refactor `dispatch` to return `Result<Option<Value>, _>` while `run_acp` remains sequential.
+2. Run the existing tests and handshake checker to prove the new boundary preserves behavior.
+3. Add the channel and dedicated writer loop without spawning tasks yet.
+4. Move the reader and writer loops into spawned tasks.
+5. Add duplex coverage for a response received before client EOF and for draining queued responses after EOF.
 
 ## Required behavior
 

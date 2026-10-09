@@ -21,6 +21,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
+| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | in progress | Preserve ACP behavior with separate input and single-owner output tasks | Dispatch boundary refactored and validated; channel implementation remains |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -301,6 +302,60 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 1. Before starting Task 4 implementation, refine `04-reader-writer-tasks.md` against the retained Task 3 transport and tests, as required by the roadmap.
 2. Begin Task 4 by reviewing its goal and the current `run_acp`, frame-reader, and frame-writer boundaries; no Task 3 work remains unverified.
+
+## Session checkpoint — 2026-10-09 (Task 4 transport design)
+
+### Current understanding
+
+- One ACP stdio connection can eventually contain multiple concurrent operations that produce outbound messages; those are multiple message producers, not multiple stdout writers.
+- A single writer task should exclusively own the output stream so async writes cannot interleave and corrupt newline-delimited JSON frames.
+- A Tokio `mpsc` channel transfers owned messages from one or more `Sender` values to one `Receiver`; after every sender is dropped and queued messages are drained, `recv()` returns `None` and gives the writer a natural shutdown signal.
+- For Task 4's sequential handling, the reader task should own the sender. Returning from the reader at EOF then drops the last sender, provided the coordinator does not retain another copy.
+- A JSON-RPC error response is successful protocol handling and belongs in `Ok(Some(value))`; Rust `Err` is reserved for failures that prevent normal handling.
+
+### Working Task 4 decisions
+
+- The channel will carry complete `serde_json::Value` messages. This keeps Task 4 focused on task ownership, channels, and shutdown; a typed outgoing-message enum can be introduced later when real message categories justify it.
+- Dispatch remains responsible for constructing complete JSON-RPC messages, using typed response structures before conversion to `Value` where useful.
+- The writer remains structurally ignorant of message semantics and owns only compact serialization, newline framing, writing, flushing, and the output stream.
+- The first refactor target is for dispatch to return `Result<Option<Value>, Error>`: `Some` means an outbound message, `None` means valid handling with no response, and `Err` means an internal failure.
+- These decisions are intentionally reversible if compiler feedback or later requirements expose a weakness.
+
+### Source checkpoint
+
+- Task 4 implementation has not started; no Task 4 behavior has been validated.
+- The repository is on `master` at commit `3b25b16`; `.github/workflows/ci.yml` has an uncommitted restoration of the format-and-Clippy CI job.
+- The restored CI job mirrors the local formatting and strict Clippy checks. `./premerge.sh` passed all 41 tests, workflow diagnostics were clean, and local `actionlint` validation was unavailable because `actionlint` is not installed.
+
+### Exact resume point
+
+1. Refine `04-reader-writer-tasks.md` with the decisions above before starting implementation.
+2. Change only the dispatch boundary first: make it return `Result<Option<Value>, _>`, while keeping `run_acp` sequential and calling the existing `write_frame` for `Some`.
+3. Run the existing focused tests, `./premerge.sh`, and the unchanged handshake checker before introducing a channel; do not combine the dispatch refactor with task spawning.
+4. After that behavior-preserving seam is green, decide the remaining Task 4 questions about Tokio features and writer-task error propagation just before they are needed.
+
+## Session checkpoint — 2026-10-09 (Task 4 dispatch boundary)
+
+### Current understanding
+
+- Rust blocks return their final expression when it has no trailing semicolon; explicit `return` is reserved for leaving the function before that final expression.
+- Dispatch can construct a protocol response without owning the output stream by returning `Result<Option<Value>, _>`.
+- `Some(value)` represents a complete outbound protocol message, while Rust `Err` remains reserved for failures that prevent normal handling.
+- Keeping `run_acp` sequential during this refactor isolated the ownership boundary change from the upcoming channel and task changes.
+
+### Source checkpoint
+
+- `dispatch` no longer accepts a writer and instead returns `Result<Option<Value>, _>`.
+- `run_acp` still handles requests sequentially and calls the existing `write_frame` for each returned response.
+- `./premerge.sh` passed all 41 tests, `cargo build --locked` exited 0, and the unchanged handshake checker exited 0 with report `/tmp/acp-task4-dispatch-refactor.json`.
+- No channel or spawned-task code has been added yet.
+
+### Exact resume point
+
+1. Confirm from Tokio's documentation which crate feature enables `tokio::sync::mpsc`.
+2. Add the channel and a dedicated writer loop without spawning tasks yet, preserving sequential coordination.
+3. Defer the writer-task error propagation decision until task spawning makes it necessary.
+4. The channel and writer-loop increment remains unimplemented and unverified.
 
 ## Validation record
 
