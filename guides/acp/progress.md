@@ -21,7 +21,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
-| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | in progress | Preserve ACP behavior with separate input and single-owner output tasks | Dispatch boundary refactored and validated; channel implementation remains |
+| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | in progress | Preserve ACP behavior with separate input and single-owner output tasks | Channel and writer loop validated; spawned tasks and duplex acceptance tests remain |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -356,6 +356,31 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 2. Add the channel and a dedicated writer loop without spawning tasks yet, preserving sequential coordination.
 3. Defer the writer-task error propagation decision until task spawning makes it necessary.
 4. The channel and writer-loop increment remains unimplemented and unverified.
+
+## Session checkpoint — 2026-10-09 (Task 4 channel and writer loop)
+
+### Current understanding
+
+- Cargo recalculates enabled crate features from the current manifests, while `--locked` prevents commands from changing the package versions and dependency graph recorded in `Cargo.lock`.
+- A bounded channel capacity of one follows the current sequential invariant: one complete response may wait while further production applies backpressure.
+- `mpsc::Sender::send` transfers ownership of a complete `Value`; `Receiver::recv` returns `None` only after every sender is dropped and all queued values are drained.
+- `tokio::try_join!` polls the reader and writer futures concurrently on the current task, allowing a response to be flushed while the reader still waits for input.
+- A helper should remain private unless callers outside its module need it; `run_acp` remains the public transport boundary.
+
+### Source checkpoint
+
+- Tokio's `sync` feature is enabled in `Cargo.toml`; `Cargo.lock` did not change.
+- `read_frames` owns the sole bounded-channel sender, and `write_frames` owns the receiver plus the only output-stream reference.
+- `run_acp` uses `tokio::try_join!` to coordinate both loops without spawning tasks yet.
+- ACP-focused tests passed 26 of 26, `./premerge.sh` passed all 41 tests, and `cargo build --locked` exited 0.
+- The unchanged handshake checker exited 0, including `initialize_reply_arrives_before_eof`, with report `/tmp/acp-task4-channel.json`.
+
+### Exact resume point
+
+1. Decide how the coordinator should stop the remaining task and propagate the error when either spawned transport task fails while the other is blocked.
+2. Then replace in-task concurrency with separately spawned reader and writer tasks, addressing the ownership and bounds required by `tokio::spawn` one compiler message at a time.
+3. Add the required in-memory duplex tests for a response before client EOF and for draining queued responses after EOF.
+4. Spawned-task behavior and the new duplex acceptance coverage remain unimplemented and unverified.
 
 ## Validation record
 

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::sync::mpsc;
 
 #[derive(Debug, Deserialize)]
 struct Request<T> {
@@ -156,9 +157,20 @@ async fn write_frame<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
-    reader: &mut R,
+async fn write_frames<W: AsyncWrite + Unpin>(
     writer: &mut W,
+    mut receiver: mpsc::Receiver<Value>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    while let Some(value) = receiver.recv().await {
+        write_frame(writer, &value).await?;
+    }
+
+    Ok(())
+}
+
+async fn read_frames<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    sender: mpsc::Sender<Value>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
 
@@ -197,12 +209,23 @@ pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
                 if let Some(response) = dispatch(request).await? {
-                    write_frame(writer, &response).await?;
+                    sender.send(response).await?;
                 }
             }
             MessageKind::Notification | MessageKind::Response => {}
         }
     }
+
+    Ok(())
+}
+
+pub async fn run_acp<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (sender, receiver) = mpsc::channel(1);
+
+    tokio::try_join!(read_frames(reader, sender), write_frames(writer, receiver),)?;
 
     Ok(())
 }
