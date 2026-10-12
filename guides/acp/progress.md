@@ -21,7 +21,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
-| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | in progress | Preserve ACP behavior with separate input and single-owner output tasks | Channel and writer loop validated; spawned tasks and duplex acceptance tests remain |
+| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 
 Use `not started`, `in progress`, `complete`, or `blocked`. Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -408,6 +408,27 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 3. If every acceptance case passes, mark Task 4 complete and add its structured validation record.
 4. Writer-hang timeout hardening remains deliberately deferred until after Task 4.
 
+## Session checkpoint — 2026-10-12 (Task 4 complete)
+
+### Current understanding
+
+- Shutting down the client's duplex write half sends EOF to the agent reader without closing the client's read half, so the client can still receive responses while the transport drains.
+- The two duplex tests prove complementary behavior: output can arrive before EOF while the reader remains blocked, and output is not lost when EOF starts graceful shutdown.
+- Acceptance tests should assert observable protocol behavior and causal ordering rather than a particular Tokio polling order or use of OS threads.
+
+### Source checkpoint
+
+- `writer_drains_response_after_client_input_reaches_eof` writes an initialize request, half-closes client input, then verifies the correlated response and clean agent-task completion.
+- `./premerge.sh` passed formatting, strict Clippy, and all 43 tests; `cargo build --locked` exited 0.
+- The unchanged handshake checker passed all 7 cases with report `/tmp/acp-task4-spawned-tasks.json`.
+- Task 4 now satisfies every machine-verifiable acceptance requirement.
+
+### Exact resume point
+
+1. Commit and push the final Task 4 drain-after-EOF test and completion ledger when requested.
+2. Before implementing Task 5, refine `05-session-new.md` against the completed Task 4 source and raise its first design decision just in time.
+3. Writer-hang timeout hardening remains deferred and should be scheduled separately rather than added to Task 5 implicitly.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -444,6 +465,18 @@ Tests run: 41
 Tests passed: 41
 Checker cases passed: 7 of 7
 Checker report path: /tmp/acp-initialize-review.json
+```
+
+```text
+Date: 2026-10-12
+Task: 4 — Reader and writer tasks
+Commit or tree state: master at acfa895; uncommitted completion changes in src/acp.rs and guides/acp/progress.md
+Commands: ./premerge.sh; cargo build --locked; uv run --script guides/acp/check_handshake.py --report /tmp/acp-task4-spawned-tasks.json --command /Users/peter/repos/hobgoblin/target/debug/hobgoblin --acp
+Exit statuses: 0; 0; 0
+Tests run: 43
+Tests passed: 43
+Checker cases passed: 7 of 7
+Checker report path: /tmp/acp-task4-spawned-tasks.json
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.

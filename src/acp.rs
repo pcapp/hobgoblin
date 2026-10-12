@@ -999,4 +999,58 @@ mod tests {
             .expect("agent task should join")
             .expect("ACP transport should shutdown cleanly");
     }
+
+    #[tokio::test]
+    async fn writer_drains_response_after_client_input_reaches_eof() {
+        let request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        });
+
+        let mut input = serde_json::to_string(&request).expect("request should serialize");
+        input.push('\n');
+
+        let (client_end, agent_end) = duplex(1024);
+        let (client_read, mut client_writer) = tokio::io::split(client_end);
+        let (agent_read, agent_write) = tokio::io::split(agent_end);
+
+        let agent_input = tokio::io::BufReader::new(agent_read);
+        let agent_output = BufWriter::new(agent_write);
+
+        let mut client_reader = tokio::io::BufReader::new(client_read);
+
+        let agent_task = tokio::spawn(run_acp(agent_input, agent_output));
+
+        client_writer
+            .write_all(input.as_bytes())
+            .await
+            .expect("client to write the initialize message");
+
+        client_writer
+            .shutdown()
+            .await
+            .expect("to cleanly shutdown the writer");
+
+        let mut response = String::new();
+        client_reader
+            .read_line(&mut response)
+            .await
+            .expect("to read the agent's response");
+
+        let response: serde_json::Value =
+            serde_json::from_str(&response).expect("agent response should be valid JSON");
+
+        validate_version(&response).expect("response should use JSON-RPC 2.0");
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
+
+        agent_task
+            .await
+            .expect("agent task should join")
+            .expect("ACP transport should shutdown cleanly");
+    }
 }
