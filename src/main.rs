@@ -40,9 +40,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     if args.acp {
-        let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
-        let mut writer = tokio::io::stdout();
-        return acp::run_acp(&mut reader, &mut writer).await;
+        let reader = tokio::io::BufReader::new(tokio::io::stdin());
+        let writer = tokio::io::stdout();
+
+        return acp::run_acp(reader, writer)
+            .await
+            .map_err(|error| -> Box<dyn std::error::Error> { error });
     }
 
     dotenvy::dotenv().ok();

@@ -377,10 +377,36 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Exact resume point
 
-1. Decide how the coordinator should stop the remaining task and propagate the error when either spawned transport task fails while the other is blocked.
-2. Then replace in-task concurrency with separately spawned reader and writer tasks, addressing the ownership and bounds required by `tokio::spawn` one compiler message at a time.
+1. Replace in-task concurrency with separately spawned reader and writer tasks, addressing the ownership and bounds required by `tokio::spawn` one compiler message at a time.
+2. Supervise them asymmetrically: reader completion lets the writer drain, while writer failure stops the reader; treat task panics as failures.
 3. Add the required in-memory duplex tests for a response before client EOF and for draining queued responses after EOF.
 4. Spawned-task behavior and the new duplex acceptance coverage remain unimplemented and unverified.
+5. After Task 4, add or schedule hardening for a writer that hangs rather than completing or returning an error; the timeout is deliberately deferred from the current acceptance scope.
+
+## Session checkpoint — 2026-10-12 (Task 4 spawned transport tasks)
+
+### Current understanding
+
+- `tokio::spawn` owns a future that must be `Send + 'static`; `'static` means the future contains no non-static borrows, not that its owned values live forever.
+- A `JoinHandle<Result<(), AcpError>>` yields `Result<Result<(), AcpError>, JoinError>`: the outer result reports cancellation or panic, while the inner result reports a normal task-level transport failure.
+- `tokio::select!` lets the coordinator observe whichever task completes first without consuming the other handle. Reader completion lets the writer drain; writer failure requires aborting and then awaiting the reader so its resources are dropped.
+- Channel closure is the writer's shutdown signal. With one sender, reader completion drops that sender; `recv()` returns `None` only after the queue is drained.
+- A duplex test must run the simulated client concurrently with `run_acp` to prove a response arrives while client input remains open. Tokio tasks provide concurrency without requiring parallel OS threads.
+
+### Source checkpoint
+
+- `run_acp` owns spawn-safe input and output streams, spawns separate reader and writer tasks, and supervises them asymmetrically with `tokio::select!`.
+- ACP task errors use `Box<dyn Error + Send + Sync>`; `main` explicitly weakens that error at the application boundary without imposing task-safe errors on the terminal frontend.
+- Existing ACP tests now transfer owned readers and writers into `run_acp` and verify behavior through observable transport output rather than inspecting moved streams.
+- `writer_can_flush_while_reader_remains_blocked` uses a split duplex stream to verify a correlated initialize response before the client sends EOF.
+- `./premerge.sh` passed formatting, strict Clippy, and all 42 tests. The handshake checker was not rerun in this session.
+
+### Exact resume point
+
+1. Add the remaining deterministic duplex acceptance test proving responses already queued when input reaches EOF are still flushed before shutdown.
+2. Run `./premerge.sh`, `cargo build --locked`, and the unchanged handshake checker.
+3. If every acceptance case passes, mark Task 4 complete and add its structured validation record.
+4. Writer-hang timeout hardening remains deliberately deferred until after Task 4.
 
 ## Validation record
 

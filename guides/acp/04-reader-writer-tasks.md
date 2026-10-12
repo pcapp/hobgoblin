@@ -35,11 +35,13 @@ When every `Sender` is dropped, `recv()` returns `None`. This makes a natural sh
 - `Some(value)` means the writer should emit a message; `None` means valid handling with no response.
 - The writer owns compact serialization, newline framing, writing, flushing, and the output stream.
 - During Task 4's sequential handling, the reader task owns the only sender. Reaching EOF drops that sender, allowing the writer to drain the queue and exit.
+- Tokio's `sync` feature enables `tokio::sync::mpsc`.
+- The coordinator supervises both transport tasks asymmetrically: reader completion drops the sender and lets the writer drain, while writer failure stops the reader because responses can no longer be delivered.
+- A panic in either transport task is treated as task failure rather than normal shutdown.
 
-## Decide when needed
+## Deferred hardening
 
-1. Which Tokio feature enables `tokio::sync::mpsc`?
-2. How does a writer-task error, such as closed stdout, reach the coordinating task?
+- Add a timeout for a writer that hangs instead of completing or returning an error. This is intentionally outside Task 4's current acceptance scope.
 
 ## Implementation order
 
