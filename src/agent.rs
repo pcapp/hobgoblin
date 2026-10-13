@@ -117,10 +117,15 @@ pub async fn turn<M: Model>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeMap, VecDeque};
+    use std::collections::VecDeque;
 
     use super::*;
     use std::sync::Mutex;
+
+    fn empty_session() -> Session {
+        let cwd = std::env::current_dir().expect("test should have a current directory");
+        Session::empty(cwd)
+    }
 
     struct ScriptedModel {
         responses: Mutex<VecDeque<Value>>,
@@ -160,10 +165,7 @@ mod tests {
             }]
         })]);
 
-        let mut session = Session {
-            conversation: Conversation::default(),
-            skills_by_name: BTreeMap::new(),
-        };
+        let mut session = empty_session();
 
         let answer = turn(&model, &mut session, "Hello, world!")
             .await
@@ -195,10 +197,7 @@ mod tests {
             }),
         ]);
 
-        let mut session = Session {
-            conversation: Conversation::default(),
-            skills_by_name: BTreeMap::new(),
-        };
+        let mut session = empty_session();
 
         turn(&model, &mut session, "first question")
             .await
@@ -254,15 +253,9 @@ mod tests {
             }),
         ]);
 
-        let mut first_session = Session {
-            conversation: Conversation::default(),
-            skills_by_name: BTreeMap::new(),
-        };
+        let mut first_session = empty_session();
 
-        let mut second_session = Session {
-            conversation: Conversation::default(),
-            skills_by_name: BTreeMap::new(),
-        };
+        let mut second_session = empty_session();
 
         turn(&model, &mut first_session, "first question")
             .await

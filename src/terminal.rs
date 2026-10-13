@@ -12,7 +12,8 @@ pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     output: &mut W,
     prompt: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = Session::new(skill_loader)?;
+    let cwd = std::env::current_dir()?;
+    let mut conversation = Session::new(cwd, skill_loader)?;
 
     let response = agent::turn(client, &mut conversation, prompt).await?;
     writeln!(output, "{response}")?;
@@ -27,7 +28,8 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
     reader: &mut R,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut conversation = Session::new(skill_loader)?;
+    let cwd = std::env::current_dir()?;
+    let mut conversation = Session::new(cwd, skill_loader)?;
 
     let mut user_input = String::new();
     loop {

@@ -1,12 +1,45 @@
+use std::collections::HashMap;
 use std::error::Error;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, RwLock, mpsc};
+use uuid::Uuid;
+
+use crate::session::Session;
 
 type AcpError = Box<dyn Error + Send + Sync>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+struct SessionId(Uuid);
+
+impl SessionId {
+    fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+type SessionHandle = Arc<Mutex<Session>>;
+type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
+
+struct ConnectionState {
+    initialized: bool,
+    sessions: SessionRegistry,
+}
+
+impl ConnectionState {
+    fn new() -> Self {
+        Self {
+            initialized: false,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct Request<T> {
@@ -29,6 +62,14 @@ struct InitializeParams {
 
     #[serde(default)]
     client_capabilities: ClientCapabilities,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NewSessionParams {
+    cwd: PathBuf,
+
+    mcp_servers: Vec<Value>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -170,6 +211,7 @@ async fn write_frames<W: AsyncWrite + Unpin + Send>(
 async fn read_frames<R: AsyncBufRead + Unpin>(
     mut reader: R,
     sender: mpsc::Sender<Value>,
+    mut state: ConnectionState,
 ) -> Result<(), AcpError> {
     let mut input = String::new();
 
@@ -207,7 +249,7 @@ async fn read_frames<R: AsyncBufRead + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                if let Some(response) = dispatch(request).await? {
+                if let Some(response) = dispatch(request, &mut state).await? {
                     sender.send(response).await?;
                 }
             }
@@ -224,8 +266,9 @@ where
     W: AsyncWrite + Unpin + Send + 'static,
 {
     let (sender, receiver) = mpsc::channel(1);
+    let state = ConnectionState::new();
 
-    let mut reader_task = tokio::spawn(read_frames(reader, sender));
+    let mut reader_task = tokio::spawn(read_frames(reader, sender, state));
     let mut writer_task = tokio::spawn(write_frames(writer, receiver));
 
     tokio::select! {
@@ -271,7 +314,10 @@ where
     Ok(())
 }
 
-async fn dispatch(request: Request<Value>) -> Result<Option<Value>, AcpError> {
+async fn dispatch(
+    request: Request<Value>,
+    state: &mut ConnectionState,
+) -> Result<Option<Value>, AcpError> {
     if request.method == "initialize" {
         let params = request.params.unwrap_or(Value::Null);
 
@@ -290,6 +336,7 @@ async fn dispatch(request: Request<Value>) -> Result<Option<Value>, AcpError> {
             return Ok(Some(response));
         }
 
+        state.initialized = true;
         let result = serde_json::json!({
             "protocolVersion": 1,
             "agentCapabilities": {},
@@ -300,6 +347,18 @@ async fn dispatch(request: Request<Value>) -> Result<Option<Value>, AcpError> {
             jsonrpc: String::from("2.0"),
             id: request.id,
             result,
+        };
+
+        let response = serde_json::to_value(response)?;
+        Ok(Some(response))
+    } else if request.method == "session/new" && !state.initialized {
+        let response = ErrorResponse {
+            jsonrpc: String::from("2.0"),
+            id: request.id,
+            error: ResponseError {
+                code: -32001,
+                message: String::from("Connection not initialized"),
+            },
         };
 
         let response = serde_json::to_value(response)?;
@@ -325,8 +384,8 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex};
 
     use crate::acp::{
-        InitializeParams, MAX_FRAME_BYTES, MessageKind, Request, classify_message, run_acp,
-        validate_version, write_frame,
+        ConnectionState, InitializeParams, MAX_FRAME_BYTES, MessageKind, Request, classify_message,
+        dispatch, run_acp, validate_version, write_frame,
     };
 
     #[test]
@@ -392,6 +451,30 @@ mod tests {
         let error = &result["error"];
         assert_eq!(error["code"], -32602);
         assert_eq!(error["message"], "Invalid params")
+    }
+
+    #[tokio::test]
+    async fn session_creation_before_initialization_is_rejected() {
+        let request = Request {
+            id: serde_json::json!(1),
+            method: String::from("session/new"),
+            params: Some(serde_json::json!({
+                "cwd": "/tmp",
+                "mcpServer": [],
+            })),
+        };
+
+        let mut state = ConnectionState::new();
+
+        let response = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce a response");
+
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert_eq!(response["error"]["code"], serde_json::json!(-32001));
+        assert!(response.get("result").is_none());
+        assert!(state.sessions.read().await.is_empty());
     }
 
     #[tokio::test]

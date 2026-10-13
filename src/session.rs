@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, io::Error};
+use std::{
+    collections::BTreeMap,
+    io::Error,
+    path::{Path, PathBuf},
+};
 
 use serde_json::json;
 
@@ -8,12 +12,13 @@ use crate::{
 };
 
 pub struct Session {
+    cwd: PathBuf,
     pub conversation: Conversation,
     pub skills_by_name: BTreeMap<String, Skill>,
 }
 
 impl Session {
-    pub fn new<L: SkillLoader>(skill_loader: &L) -> Result<Session, Error> {
+    pub fn new<L: SkillLoader>(cwd: PathBuf, skill_loader: &L) -> Result<Session, Error> {
         let mut conversation = Conversation::default();
 
         let skills_by_name = skill_loader.load_skills()?;
@@ -35,8 +40,21 @@ impl Session {
         }
 
         Ok(Session {
+            cwd,
             conversation,
             skills_by_name,
         })
+    }
+
+    pub fn empty(cwd: PathBuf) -> Self {
+        Self {
+            cwd,
+            conversation: Conversation::default(),
+            skills_by_name: BTreeMap::new(),
+        }
+    }
+
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
     }
 }
