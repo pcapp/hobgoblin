@@ -434,8 +434,8 @@ mod tests {
 
     use crate::acp::{
         ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
-        METHOD_NOT_FOUND_CODE, MessageKind, Request, classify_message, dispatch, run_acp,
-        validate_version, write_frame,
+        METHOD_NOT_FOUND_CODE, MessageKind, Request, SessionId, classify_message, dispatch,
+        run_acp, validate_version, write_frame,
     };
 
     #[test]
@@ -510,7 +510,7 @@ mod tests {
             method: String::from("session/new"),
             params: Some(serde_json::json!({
                 "cwd": "/tmp",
-                "mcpServer": [],
+                "mcpServers": [],
             })),
         };
 
@@ -525,6 +525,45 @@ mod tests {
         assert_eq!(response["error"]["code"], serde_json::json!(-32001));
         assert!(response.get("result").is_none());
         assert!(state.sessions.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn session_creation_returns_id_and_retains_working_directory() {
+        let request = Request {
+            id: serde_json::json!(1),
+            method: String::from("session/new"),
+            params: Some(serde_json::json!({
+                "cwd": "/tmp",
+                "mcpServers": [],
+            })),
+        };
+
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        let response = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce a response");
+
+        assert_eq!(response["id"], serde_json::json!(1));
+
+        let session_id: SessionId = serde_json::from_value(response["result"]["sessionId"].clone())
+            .expect("session ID should be a valid UUID");
+
+        let session_handle = {
+            let registry = state.sessions.read().await;
+
+            registry
+                .get(&session_id)
+                .cloned()
+                .expect("returned session ID should exist in the registry")
+        };
+
+        let session = session_handle.lock().await;
+
+        assert_eq!(session.cwd(), std::path::Path::new("/tmp"));
+        assert!(response.get("error").is_none());
     }
 
     #[tokio::test]

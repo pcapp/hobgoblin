@@ -455,6 +455,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 3. Add focused coverage for malformed parameters, relative `cwd`, two distinct IDs, and retained per-session working directories; then extend the subprocess checker.
 4. Decide unknown-session lookup behavior only when the first lookup operation is introduced; do not pre-solve Task 6 prompt handling.
 
+## Session checkpoint — 2026-10-13 (Task 5 successful session creation)
+
+### Current understanding
+
+- `Arc<T>` exposes `T`'s methods through `Deref`, so calling `write()` on `Arc<RwLock<T>>` resolves to `RwLock::write`; awaiting it suspends the task rather than blocking the runtime thread when the lock is unavailable.
+- A registry lookup returns a borrowed `&Arc<Mutex<Session>>`. Cloning that value clones only the `Arc` handle, not the session, allowing the registry guard to be dropped before awaiting the per-session mutex.
+- Struct destructuring can move the needed `cwd` field into a local binding while explicitly ignoring `mcp_servers`.
+- Named `ErrorResponse` constructors keep JSON-RPC meanings visible at call sites, while one general constructor centralizes the response shape; protocol error numbers now have named constants.
+
+### Source checkpoint
+
+- Branch `milestone5` contains commit `350a71f` (`Implement ACP session creation`) and has additional uncommitted test and ledger changes at this checkpoint.
+- Initialized `session/new` validates parameters and an absolute `cwd`, inserts an independently locked empty session under a UUID v7 ID, and returns that same ID.
+- `session_creation_returns_id_and_retains_working_directory` deserializes the returned ID, uses it to find the stored handle, and verifies the retained `/tmp` working directory.
+- The focused success-path test passed. The compiler still reports that `NewSessionParams::mcp_servers` is never read even though it is required during deserialization and deliberately ignored.
+
+### Exact resume point
+
+1. Add focused tests for malformed `session/new` parameters and a relative `cwd`; each must return `-32602` without changing the registry.
+2. Add coverage proving that two successful creations return distinct IDs and retain independent sessions.
+3. Decide how to represent the intentionally accepted-but-unused `mcpServers` field without leaving a warning, then extend the subprocess checker.
+4. Run the complete Task 5 validation set before marking the task complete.
+
 ## Validation record
 
 Add one structured entry after validation:
