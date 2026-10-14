@@ -27,6 +27,10 @@ impl SessionId {
 type SessionHandle = Arc<Mutex<Session>>;
 type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
 
+const INVALID_PARAMS_CODE: i32 = -32602;
+const METHOD_NOT_FOUND_CODE: i32 = -32601;
+const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
+
 struct ConnectionState {
     initialized: bool,
     sessions: SessionRegistry,
@@ -116,6 +120,34 @@ struct ErrorResponse {
     jsonrpc: String,
     id: Value,
     error: ResponseError,
+}
+
+impl ErrorResponse {
+    fn new(id: Value, code: i32, message: &str) -> Self {
+        Self {
+            jsonrpc: String::from("2.0"),
+            id,
+            error: ResponseError {
+                code,
+                message: message.to_string(),
+            },
+        }
+    }
+    fn invalid_params(id: Value) -> Self {
+        Self::new(id, INVALID_PARAMS_CODE, "Invalid params")
+    }
+
+    fn connection_not_initialized(id: Value) -> Self {
+        Self::new(
+            id,
+            CONNECTION_NOT_INITIALIZED_CODE,
+            "Connection not initialized",
+        )
+    }
+
+    fn method_not_found(id: Value) -> Self {
+        Self::new(id, METHOD_NOT_FOUND_CODE, "Method not found")
+    }
 }
 
 #[derive(Serialize)]
@@ -322,14 +354,7 @@ async fn dispatch(
         let params = request.params.unwrap_or(Value::Null);
 
         if serde_json::from_value::<InitializeParams>(params).is_err() {
-            let response = ErrorResponse {
-                jsonrpc: String::from("2.0"),
-                id: request.id,
-                error: ResponseError {
-                    code: -32602,
-                    message: String::from("Invalid params"),
-                },
-            };
+            let response = ErrorResponse::invalid_params(request.id);
 
             let response = serde_json::to_value(response)?;
 
@@ -352,26 +377,50 @@ async fn dispatch(
         let response = serde_json::to_value(response)?;
         Ok(Some(response))
     } else if request.method == "session/new" && !state.initialized {
-        let response = ErrorResponse {
-            jsonrpc: String::from("2.0"),
-            id: request.id,
-            error: ResponseError {
-                code: -32001,
-                message: String::from("Connection not initialized"),
-            },
-        };
+        let response = ErrorResponse::connection_not_initialized(request.id);
 
         let response = serde_json::to_value(response)?;
         Ok(Some(response))
-    } else {
-        let response = ErrorResponse {
+    } else if request.method == "session/new" {
+        let params = request.params.unwrap_or(Value::Null);
+        let NewSessionParams {
+            cwd,
+            mcp_servers: _,
+        } = match serde_json::from_value::<NewSessionParams>(params) {
+            Ok(params) => params,
+            Err(_) => {
+                let response = ErrorResponse::invalid_params(request.id);
+
+                return Ok(Some(serde_json::to_value(response)?));
+            }
+        };
+
+        if !cwd.is_absolute() {
+            let response = ErrorResponse::invalid_params(request.id);
+
+            return Ok(Some(serde_json::to_value(response)?));
+        }
+
+        let session_id = SessionId::new();
+        let session = Arc::new(Mutex::new(Session::empty(cwd)));
+
+        {
+            let mut sessions = state.sessions.write().await;
+            sessions.insert(session_id.clone(), session);
+        }
+
+        let result = serde_json::json!({
+            "sessionId": session_id,
+        });
+        let response = SuccessResponse {
             jsonrpc: String::from("2.0"),
             id: request.id,
-            error: ResponseError {
-                code: -32601,
-                message: String::from("Method not found"),
-            },
+            result,
         };
+
+        Ok(Some(serde_json::to_value(response)?))
+    } else {
+        let response = ErrorResponse::method_not_found(request.id);
         let response = serde_json::to_value(response)?;
         Ok(Some(response))
     }
@@ -384,8 +433,9 @@ mod tests {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex};
 
     use crate::acp::{
-        ConnectionState, InitializeParams, MAX_FRAME_BYTES, MessageKind, Request, classify_message,
-        dispatch, run_acp, validate_version, write_frame,
+        ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
+        METHOD_NOT_FOUND_CODE, MessageKind, Request, classify_message, dispatch, run_acp,
+        validate_version, write_frame,
     };
 
     #[test]
@@ -977,7 +1027,7 @@ mod tests {
         );
 
         let error = &result["error"];
-        assert_eq!(error["code"], -32601);
+        assert_eq!(error["code"], METHOD_NOT_FOUND_CODE);
         assert_eq!(error["message"], "Method not found")
     }
 
@@ -1025,7 +1075,7 @@ mod tests {
         );
 
         let error = &result["error"];
-        assert_eq!(error["code"], -32602);
+        assert_eq!(error["code"], INVALID_PARAMS_CODE);
         assert_eq!(error["message"], "Invalid params")
     }
 
