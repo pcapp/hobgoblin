@@ -1,6 +1,5 @@
 # Task 5 — Create sessions
 
-> **Draft.** Refine this from the Task 4 code before starting.
 
 ## End goal
 
@@ -39,7 +38,21 @@ This is one of the most common async bugs to spot in an agent's diff.
 - `mcpServers` is accepted but not acted on; advertise no MCP capabilities.
 - No model call and no provider key are needed.
 
-## Machine-verifiable acceptance (draft)
+## Machine-verifiable acceptance
 
-- An extended subprocess checker creates two sessions and verifies distinct IDs.
-- Unit tests cover unknown-session lookups and session creation before initialization.
+- The ACP subprocess test suite creates two sessions on one connection and verifies correlated, distinct UUID v7 IDs.
+- Unit tests cover creation before initialization, malformed parameters, relative working directories, distinct IDs, and independently retained session state.
+- Unknown-session behavior is deferred until Task 6 introduces the first session lookup operation.
+
+Run:
+
+```sh
+./premerge.sh
+cargo build --locked
+uv run --project guides/acp/acp_test_suite \
+  guides/acp/acp_test_suite/test_handshake.py \
+  --report /tmp/acp-task5-test-suite.json \
+  --executable target/debug/hobgoblin --acp
+```
+
+Task 5 is complete only when every command exits with status 0 and the test-suite report has `passed` equal to `total`.

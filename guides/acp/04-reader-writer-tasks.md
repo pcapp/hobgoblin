@@ -4,9 +4,9 @@
 
 ## End goal
 
-ACP behavior is unchanged, but the transport is restructured: one task reads frames from stdin, one task exclusively owns stdout, and they communicate through a channel. The Task 3 handshake checker still passes unchanged.
+ACP behavior is unchanged, but the transport is restructured: one task reads frames from stdin, one task exclusively owns stdout, and they communicate through a channel. The Task 3 ACP test suite still passes unchanged.
 
-This is a pure refactor. Its purpose is to learn spawned tasks and channels while an existing checker proves nothing broke.
+This is a pure refactor. Its purpose is to learn spawned tasks and channels while the existing test suite proves nothing broke.
 
 ## Concepts
 
@@ -46,7 +46,7 @@ When every `Sender` is dropped, `recv()` returns `None`. This makes a natural sh
 ## Implementation order
 
 1. Refactor `dispatch` to return `Result<Option<Value>, _>` while `run_acp` remains sequential.
-2. Run the existing tests and handshake checker to prove the new boundary preserves behavior.
+2. Run the existing tests and ACP test suite to prove the new boundary preserves behavior.
 3. Add the channel and dedicated writer loop without spawning tasks yet.
 4. Move the reader and writer loops into spawned tasks.
 5. Add duplex coverage for a response received before client EOF and for draining queued responses after EOF.
@@ -56,7 +56,7 @@ When every `Sender` is dropped, `recv()` returns `None`. This makes a natural sh
 - The reader never writes to stdout. The writer is the only stdout owner.
 - Each outgoing message is written in full and flushed before the next is written.
 - Clean EOF on stdin produces a clean exit after all queued responses are flushed.
-- The handshake checker passes without modification.
+- The ACP test suite passes without modification.
 
 ## Implementation boundaries
 
@@ -65,6 +65,6 @@ When every `Sender` is dropped, `recv()` returns `None`. This makes a natural sh
 
 ## Machine-verifiable acceptance (draft)
 
-- Task 3's local checks and `check_handshake.py` all exit 0.
+- Task 3's local checks and `acp_test_suite/test_handshake.py` all exit 0.
 - At least one `tokio::io::duplex` test sends `initialize` and reads the correlated response without closing the client side first.
 - At least one test proves that queued responses are flushed when input reaches EOF.

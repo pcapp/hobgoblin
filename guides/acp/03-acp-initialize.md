@@ -53,7 +53,7 @@ Review:
 - `src/main.rs`: argument parsing, provider setup, and mode routing.
 - `Cargo.toml`: the currently enabled Tokio features.
 - `src/wire.rs`: provider API types that must not become ACP types.
-- [`check_handshake.py`](check_handshake.py): the externally observed contract.
+- [`test_handshake.py`](acp_test_suite/test_handshake.py): the externally observed contract.
 
 Read the canonical references before choosing your wire structures:
 
@@ -144,18 +144,19 @@ cargo build --locked
 cargo run --locked -- --help
 ```
 
-Then run the subprocess checker against the actual application:
+Then run the subprocess test suite against the actual application:
 
 ```sh
-uv run --script guides/acp/check_handshake.py \
+uv run --project guides/acp/acp_test_suite \
+  guides/acp/acp_test_suite/test_handshake.py \
   --report /tmp/acp-initialize-review.json \
-  --command /absolute/path/to/target/debug/hobgoblin --acp
+  --executable target/debug/hobgoblin --acp
 ```
 
-Replace the executable path with the absolute path on your machine. `--command` must be last because all remaining arguments are passed to the child process.
+`--executable` must be last because all remaining arguments are passed to the child process. Relative executable paths are resolved before the child starts in its temporary working directory.
 
-The checker launches the application without common model credentials and from a temporary working directory. It verifies initialization, request-ID preservation, version negotiation, conservative capabilities, unknown-method errors, clean EOF, JSON-only stdout, and a flushed response before EOF.
+The test suite launches the application without common model credentials and from a temporary working directory. It verifies initialization, request-ID preservation, version negotiation, conservative capabilities, unknown-method errors, clean EOF, JSON-only stdout, and a flushed response before EOF.
 
-Task 3 is complete only when every command exits with status 0 and the checker report has `passed` equal to `total`. No manual protocol exchange, live model call, or written explanation counts toward completion.
+Task 3 is complete only when every command exits with status 0 and the test-suite report has `passed` equal to `total`. No manual protocol exchange, live model call, or written explanation counts toward completion.
 
 Record the commands, exit statuses, and report path in [progress.md](progress.md). Before starting [Task 4](04-reader-writer-tasks.md), refine its draft from the implementation you now have.
