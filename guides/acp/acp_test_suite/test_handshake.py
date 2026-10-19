@@ -21,12 +21,75 @@ from pathlib import Path
 import selectors
 import subprocess
 import tempfile
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 MODEL_KEY_VARIABLES = (
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
 )
+
+JsonRpcId = int | str
+
+
+class ProtocolModel(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+
+class PromptCapabilities(ProtocolModel):
+    model_config = ConfigDict(strict=True, extra="allow")
+
+    image: bool = False
+    audio: bool = False
+    embedded_context: bool = Field(False, alias="embeddedContext")
+
+
+class McpCapabilities(ProtocolModel):
+    model_config = ConfigDict(strict=True, extra="allow")
+
+    http: bool = False
+    sse: bool = False
+
+
+class AgentCapabilities(ProtocolModel):
+    model_config = ConfigDict(strict=True, extra="allow")
+
+    load_session: bool = Field(False, alias="loadSession")
+    prompt: PromptCapabilities = Field(
+        default_factory=PromptCapabilities,
+        alias="promptCapabilities",
+    )
+    mcp: McpCapabilities = Field(
+        default_factory=McpCapabilities,
+        alias="mcpCapabilities",
+    )
+
+
+class InitializeResult(ProtocolModel):
+    protocol_version: int = Field(alias="protocolVersion")
+    agent_capabilities: AgentCapabilities = Field(alias="agentCapabilities")
+    auth_methods: list[object] = Field(alias="authMethods")
+
+
+class InitializeResponse(ProtocolModel):
+    jsonrpc: Literal["2.0"]
+    id: JsonRpcId
+    result: InitializeResult
+
+
+class JsonRpcError(ProtocolModel):
+    model_config = ConfigDict(strict=True, extra="allow")
+
+    code: int
+    message: str
+
+
+class ErrorResponse(ProtocolModel):
+    jsonrpc: Literal["2.0"]
+    id: JsonRpcId
+    error: JsonRpcError
 
 
 @dataclass
@@ -76,7 +139,9 @@ class InitializeTestCase(TestCase):
     def execute(self, agent):
         agent.send(self.request)
         response_frames, stderr_bytes = agent.finish()
-        validate_initialize_response(response_frames, self.expected_id)
+        require(len(response_frames) == 1,
+                "expected exactly one initialization response")
+        validate_initialize_response(response_frames[0], self.expected_id)
         return response_frames, stderr_bytes
 
 
@@ -86,7 +151,9 @@ class InitializeBeforeEofTestCase(InitializeTestCase):
         first_frame = agent.read()
         remaining_frames, stderr_bytes = agent.finish()
         response_frames = [first_frame, *remaining_frames]
-        validate_initialize_response(response_frames, self.expected_id)
+        require(len(response_frames) == 1,
+                "expected exactly one initialization response")
+        validate_initialize_response(response_frames[0], self.expected_id)
         return response_frames, stderr_bytes
 
 
@@ -100,11 +167,12 @@ class UnknownMethodTestCase(TestCase):
         response_frames, stderr_bytes = agent.finish()
         require(len(response_frames) == 2,
                 "expected init response and unknown-method response")
-        validate_initialize_response([response_frames[0]], 1)
-        error = response_frames[1]
-        require(error.get("id") == self.request["id"] and "result" not in error,
+        validate_initialize_response(response_frames[0], 1)
+        error = ErrorResponse.model_validate(response_frames[1])
+        require(error.id == self.request["id"]
+                and type(error.id) is type(self.request["id"]),
                 "bad error correlation")
-        require(error["error"]["code"] == -32601,
+        require(error.error.code == -32601,
                 "expected Method not found (-32601)")
         return response_frames, stderr_bytes
 
@@ -230,30 +298,26 @@ def decode_stdout(stdout):
 
 
 
-def validate_initialize_response(frames, expected_id):
-    """Validate the fields and conservative capabilities of one init response."""
-    require(len(frames) == 1, "expected exactly one initialization response")
-
-    # Ensure JSON-RPC response shape.
-    frame = frames[0]
-    require(frame.get("id") == expected_id and type(frame.get("id")) is type(expected_id),
+def validate_initialize_response(frame, expected_id):
+    """Validate one successful initialization response."""
+    response = InitializeResponse.model_validate(frame)
+    require(response.id == expected_id and type(response.id) is type(expected_id),
             "request ID/value/type mismatch")
-    require("error" not in frame, "initialization returned an error")
-
-    # Ensure we support ACP version 1.
-    result = frame["result"]
-    require(type(result.get("protocolVersion")) is int and result["protocolVersion"] == 1,
+    require(response.result.protocol_version == 1,
             "expected selected protocol version 1")
 
-    # Validate agentic capabilities.
-    caps = result["agentCapabilities"]
-    require(isinstance(caps, dict), "capabilities must be an object")
-    require(not caps.get("loadSession", False), "agent must not promise session loading")
-    for section, keys in (("promptCapabilities", ("image", "audio", "embeddedContext")),
-                          ("mcpCapabilities", ("http", "sse"))):
-        require(not any(caps.get(section, {}).get(key, False) for key in keys),
-                "agent promises an unimplemented optional capability")
-    require(result.get("authMethods", []) == [],
+    capabilities = response.result.agent_capabilities
+    unsupported_capabilities = (
+        capabilities.load_session,
+        capabilities.prompt.image,
+        capabilities.prompt.audio,
+        capabilities.prompt.embedded_context,
+        capabilities.mcp.http,
+        capabilities.mcp.sse,
+    )
+    require(not any(unsupported_capabilities),
+            "agent promises an unimplemented optional capability")
+    require(response.result.auth_methods == [],
             "initialization task must not require authentication")
 
 
