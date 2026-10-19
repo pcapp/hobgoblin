@@ -430,6 +430,7 @@ async fn dispatch(
 mod tests {
     use std::io::Cursor;
 
+    use serde_json::Value;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex};
 
     use crate::acp::{
@@ -528,6 +529,148 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_creation_rejects_malformed_mcp_server_field() {
+        let request = Request {
+            id: serde_json::json!(1),
+            method: String::from("session/new"),
+            params: Some(serde_json::json!({
+                "cwd": "/tmp",
+                "mcpServers": "bogus",
+            })),
+        };
+
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        let response = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("should return a response with an error field");
+
+        {
+            let registry = state.sessions.read().await;
+            assert_eq!(registry.len(), 0);
+        }
+
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert_eq!(
+            response["error"]["code"],
+            serde_json::json!(INVALID_PARAMS_CODE)
+        );
+        assert!(response.get("result").is_none());
+    }
+
+    #[tokio::test]
+    async fn session_creation_rejects_relative_working_directory() {
+        let request = Request {
+            id: serde_json::json!(1),
+            method: String::from("session/new"),
+            params: Some(serde_json::json!({
+                "cwd": "relative/path",
+                "mcpServers": [],
+            })),
+        };
+
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        let response = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("should return a response with an error field");
+
+        {
+            let registry = state.sessions.read().await;
+            assert_eq!(registry.len(), 0);
+        }
+
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert_eq!(
+            response["error"]["code"],
+            serde_json::json!(INVALID_PARAMS_CODE)
+        );
+        assert!(response.get("result").is_none());
+    }
+
+    #[tokio::test]
+    async fn session_creation_returns_distinct_independent_sessions() {
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        fn make_request(request_id: u64, cwd: String) -> Request<Value> {
+            Request {
+                id: serde_json::json!(request_id),
+                method: String::from("session/new"),
+                params: Some(serde_json::json!({
+                    "cwd": cwd,
+                    "mcpServers": [],
+                })),
+            }
+        }
+
+        let first_request = make_request(1, "/tmp/session_one".to_string());
+        let second_request = make_request(2, "/tmp/session_two".to_string());
+
+        let first_response = dispatch(first_request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce a response");
+
+        let second_response = dispatch(second_request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce a response");
+
+        assert_eq!(first_response["id"], serde_json::json!(1));
+        assert_eq!(second_response["id"], serde_json::json!(2));
+
+        let first_session_id: SessionId =
+            serde_json::from_value(first_response["result"]["sessionId"].clone())
+                .expect("session ID should be a valid UUID");
+        let second_session_id: SessionId =
+            serde_json::from_value(second_response["result"]["sessionId"].clone())
+                .expect("session ID should be a valid UUID");
+
+        assert_ne!(first_session_id, second_session_id);
+
+        let (first_session_handle, second_session_handle) = {
+            let registry = state.sessions.read().await;
+
+            assert_eq!(registry.len(), 2);
+
+            (
+                registry
+                    .get(&first_session_id)
+                    .cloned()
+                    .expect("returned session ID should exist in the registry"),
+                registry
+                    .get(&second_session_id)
+                    .cloned()
+                    .expect("returned session ID should exist in the registry"),
+            )
+        };
+
+        {
+            let first_session = first_session_handle.lock().await;
+            assert_eq!(
+                first_session.cwd(),
+                std::path::Path::new("/tmp/session_one")
+            );
+            assert!(first_response.get("error").is_none());
+        }
+
+        {
+            let second_session = second_session_handle.lock().await;
+
+            assert_eq!(
+                second_session.cwd(),
+                std::path::Path::new("/tmp/session_two")
+            );
+            assert!(second_response.get("error").is_none());
+        }
+    }
+
+    #[tokio::test]
     async fn session_creation_returns_id_and_retains_working_directory() {
         let request = Request {
             id: serde_json::json!(1),
@@ -547,7 +690,6 @@ mod tests {
             .expect("request should produce a response");
 
         assert_eq!(response["id"], serde_json::json!(1));
-
         let session_id: SessionId = serde_json::from_value(response["result"]["sessionId"].clone())
             .expect("session ID should be a valid UUID");
 
