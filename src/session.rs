@@ -12,6 +12,10 @@ use crate::{
 };
 
 pub struct Session {
+    #[allow(
+        dead_code,
+        reason = "retained as ACP session context for future cwd-aware tools"
+    )]
     cwd: PathBuf,
     pub conversation: Conversation,
     pub skills_by_name: BTreeMap<String, Skill>,
@@ -54,6 +58,10 @@ impl Session {
         }
     }
 
+    #[allow(
+        dead_code,
+        reason = "used to verify retained session context; production consumers are deferred"
+    )]
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }

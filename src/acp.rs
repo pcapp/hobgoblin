@@ -73,6 +73,10 @@ struct InitializeParams {
 struct NewSessionParams {
     cwd: PathBuf,
 
+    #[allow(
+        dead_code,
+        reason = "ACP requires mcpServers, but MCP support is intentionally deferred"
+    )]
     mcp_servers: Vec<Value>,
 }
 
