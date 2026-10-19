@@ -22,7 +22,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
-| [5 — Session creation](05-session-new.md) | in progress | Create unique UUID v7 session IDs backed by a per-connection registry | Shared registry and connection lifecycle state are in place; focused pre-initialization rejection test passes |
+| [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -478,6 +478,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 3. Decide how to represent the intentionally accepted-but-unused `mcpServers` field without leaving a warning, then extend the subprocess checker.
 4. Run the complete Task 5 validation set before marking the task complete.
 
+## Session checkpoint — 2026-10-19 (Task 5 complete)
+
+### Current understanding
+
+- Shared registry access and per-session access have separate locks; clone a session handle under the short registry lock, release that guard, and only then await the session lock.
+- Default to dropping lock guards before `.await`; holding a Tokio mutex across an await is supported but must protect state that genuinely requires exclusivity for the entire asynchronous operation.
+- Pydantic models validate protocol shape and strict wire types, while concrete test cases express behavioral sequences and `AgentProcess` owns subprocess transport concerns.
+- The repository premerge path now runs the ACP test suite's Ruff lint and formatting checks before Rust Clippy and tests.
+
+### Source checkpoint
+
+- Branch `milestone5` at clean commit `17278de` contains the completed Task 5 implementation, unit coverage, black-box ACP test suite, and current documentation.
+- `session/new` requires initialization, validates its parameters and absolute working directory, returns a UUID v7 ID, and stores independently locked session state in the connection registry.
+- The ACP test suite starts the real binary without model keys, initializes one connection, creates two sessions, and verifies correlated, distinct UUID v7 IDs.
+- Unknown-session behavior remains deliberately deferred until Task 6 introduces the first session lookup operation.
+
+### Exact resume point
+
+1. Start Task 6 from [`06-session-prompt.md`](06-session-prompt.md) and inspect the current dispatch, session registry, agent turn, and model trait boundaries.
+2. Decide the unknown-session response when implementing the first `session/prompt` registry lookup.
+3. Introduce prompt handling incrementally; address conversation exclusivity and `Send` compiler errors only when the first spawned prompt task requires those decisions.
+4. Preserve the completed Task 5 acceptance suite while adding scripted-model duplex coverage for prompt update-before-response ordering.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -526,6 +549,18 @@ Tests run: 43
 Tests passed: 43
 Checker cases passed: 7 of 7
 Checker report path: /tmp/acp-task4-spawned-tasks.json
+```
+
+```text
+Date: 2026-10-19
+Task: 5 — Session creation
+Commit or tree state: milestone5 at 17278de; working tree clean before guides/acp/progress.md was updated
+Commands: ./premerge.sh; cargo build --locked; uv run --project guides/acp/acp_test_suite guides/acp/acp_test_suite/test_handshake.py --report /tmp/acp-task5-test-suite.json --executable target/debug/hobgoblin --acp
+Exit statuses: 0; 0; 0
+Tests run: 48
+Tests passed: 48
+ACP test-suite cases passed: 8 of 8
+Test-suite report path: /tmp/acp-task5-test-suite.json
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.
