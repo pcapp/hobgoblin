@@ -22,6 +22,7 @@ import selectors
 import subprocess
 import tempfile
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -90,6 +91,16 @@ class ErrorResponse(ProtocolModel):
     jsonrpc: Literal["2.0"]
     id: JsonRpcId
     error: JsonRpcError
+
+
+class SessionNewResult(ProtocolModel):
+    session_id: str = Field(alias="sessionId")
+
+
+class SessionNewResponse(ProtocolModel):
+    jsonrpc: Literal["2.0"]
+    id: JsonRpcId
+    result: SessionNewResult
 
 
 @dataclass
@@ -185,6 +196,26 @@ class EmptyInputTestCase(TestCase):
         return response_frames, stderr_bytes
 
 
+class SessionCreationTestCase(TestCase):
+    def execute(self, agent):
+        first_cwd = str(Path(agent.working_directory) / "session-one")
+        second_cwd = str(Path(agent.working_directory) / "session-two")
+
+        agent.send(initialize())
+        agent.send(new_session(2, first_cwd))
+        agent.send(new_session(3, second_cwd))
+        response_frames, stderr_bytes = agent.finish()
+
+        require(len(response_frames) == 3,
+                "expected initialize and two session responses")
+        validate_initialize_response(response_frames[0], 1)
+        first_session_id = validate_session_new_response(response_frames[1], 2)
+        second_session_id = validate_session_new_response(response_frames[2], 3)
+        require(first_session_id != second_session_id,
+                "session/new returned duplicate session IDs")
+        return response_frames, stderr_bytes
+
+
 @dataclass
 class TestSuite:
     cases: list[TestCase]
@@ -225,6 +256,10 @@ class AgentProcess:
         )
         assert self.process.stdin is not None
         assert self.process.stdout is not None
+
+    @property
+    def working_directory(self):
+        return self._temporary_directory.name
 
     def __enter__(self):
         return self
@@ -287,6 +322,19 @@ def initialize(version=1, request_id: object = 1, capabilities=None):
     }
 
 
+def new_session(request_id, cwd):
+    """Build one ACP session/new request."""
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "session/new",
+        "params": {
+            "cwd": cwd,
+            "mcpServers": [],
+        },
+    }
+
+
 def decode_stdout(stdout):
     """Decode newline-terminated JSON-RPC objects emitted by the child."""
     require(not stdout or stdout.endswith(b"\n"), "stdout frame missing newline")
@@ -321,6 +369,16 @@ def validate_initialize_response(frame, expected_id):
             "initialization task must not require authentication")
 
 
+def validate_session_new_response(frame, expected_id):
+    """Validate one successful session/new response and return its UUID."""
+    response = SessionNewResponse.model_validate(frame)
+    require(response.id == expected_id and type(response.id) is type(expected_id),
+            "request ID/value/type mismatch")
+    session_id = UUID(response.result.session_id)
+    require(session_id.version == 7, "expected a UUID v7 session ID")
+    return session_id
+
+
 def run_tests(executable, timeout):
     """Run every initialization scenario and retain failures in one report.
 
@@ -353,6 +411,7 @@ def run_tests(executable, timeout):
              "method": "lab/not-a-method", "params": {}},
         ),
         EmptyInputTestCase("empty_stdin_exits_cleanly"),
+        SessionCreationTestCase("create_two_distinct_sessions"),
         InitializeBeforeEofTestCase(
             "initialize_reply_arrives_before_eof",
             initialize(),
@@ -381,7 +440,7 @@ def main():
     results = run_tests(args.executable, args.timeout)
     report = {
         "tested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "scope": "ACP initialization only; not full conformance",
+        "scope": "ACP initialization and session creation; not full conformance",
         "executable": args.executable,
         "total": len(results),
         "passed": sum(result.passed for result in results),
