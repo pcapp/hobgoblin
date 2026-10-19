@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.9"
-# dependencies = []
-# ///
 """Check ACP initialization through a real subprocess.
 
 The checker starts the supplied command once per case, writes newline-delimited
@@ -14,9 +9,10 @@ One probe keeps stdin open until the response arrives. This catches agents that
 buffer the initialization response until the client disconnects.
 
 This is a focused initialization check, not an ACP conformance suite.
-Python 3.9+; standard library only.
+Python 3.14+.
 """
 import argparse
+from dataclasses import dataclass
 import datetime
 import json
 import os
@@ -25,12 +21,63 @@ import selectors
 import subprocess
 import tempfile
 
-
 MODEL_KEY_VARIABLES = (
     "OPENROUTER_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
 )
+
+
+@dataclass
+class CheckResult:
+    name: str
+    passed: bool
+    frames: list[dict] | None = None
+    stderr_bytes: int | None = None
+    failure: str | None = None
+
+    def to_dict(self):
+        return {
+            key: value
+            for key, value in vars(self).items()
+            if value is not None
+        }
+
+
+@dataclass
+class CheckCase:
+    name: str
+    requests: list[dict]
+    expected_id: object | None = None
+    reply_before_eof: bool = False
+
+    def run(self, command, timeout):
+        try:
+            if self.reply_before_eof:
+                frames, stderr_bytes = exchange_before_eof(
+                    command, self.requests[0], timeout
+                )
+            else:
+                frames, stderr_bytes = exchange(command, self.requests, timeout)
+
+            if self.expected_id is not None:
+                check_initialize(frames, self.expected_id)
+            elif self.requests:
+                require(len(frames) == 2,
+                        "expected init response and unknown-method response")
+                check_initialize([frames[0]], 1)
+                error = frames[1]
+                require(error.get("id") == 2 and "result" not in error,
+                        "bad error correlation")
+                require(error["error"]["code"] == -32601,
+                        "expected Method not found (-32601)")
+            else:
+                require(frames == [],
+                        "empty input unexpectedly emitted protocol messages")
+
+            return CheckResult(self.name, True, frames, stderr_bytes)
+        except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
+            return CheckResult(self.name, False, failure=str(exc))
 
 
 def require(condition, message):
@@ -175,49 +222,27 @@ def run_checks(command, timeout):
     shows all observed protocol-boundary failures from one invocation.
     """
     cases = [
-        ("initialize_v1", [initialize()], 1),
-        ("preserve_string_request_id", [initialize(request_id="init-A")], "init-A"),
-        ("unsupported_version_selects_v1", [initialize(version=2)], 1),
-        ("client_capabilities_do_not_become_agent_promises",
-         [initialize(capabilities={"fs": {"readTextFile": True, "writeTextFile": True},
-                                   "terminal": True})], 1),
-        ("unknown_method_is_correlated_error",
-         [initialize(), {"jsonrpc": "2.0", "id": 2,
-                         "method": "lab/not-a-method", "params": {}}], None),
-        ("empty_stdin_exits_cleanly", [], None),
+        CheckCase("initialize_v1", [initialize()], 1),
+        CheckCase("preserve_string_request_id",
+                  [initialize(request_id="init-A")], "init-A"),
+        CheckCase("unsupported_version_selects_v1", [initialize(version=2)], 1),
+        CheckCase(
+            "client_capabilities_do_not_become_agent_promises",
+            [initialize(capabilities={
+                "fs": {"readTextFile": True, "writeTextFile": True},
+                "terminal": True,
+            })],
+            1,
+        ),
+        CheckCase(
+            "unknown_method_is_correlated_error",
+            [initialize(), {"jsonrpc": "2.0", "id": 2,
+                            "method": "lab/not-a-method", "params": {}}],
+        ),
+        CheckCase("empty_stdin_exits_cleanly", []),
+        CheckCase("initialize_reply_arrives_before_eof", [initialize()], 1, True),
     ]
-    results = []
-    for name, requests, expected_id in cases:
-        try:
-            frames, stderr_bytes = exchange(command, requests, timeout)
-            if expected_id is not None:
-                check_initialize(frames, expected_id)
-            elif requests:
-                require(len(frames) == 2,
-                        "expected init response and unknown-method response")
-                check_initialize([frames[0]], 1)
-                error = frames[1]
-                require(error.get("id") == 2 and "result" not in error,
-                        "bad error correlation")
-                require(error["error"]["code"] == -32601,
-                        "expected Method not found (-32601)")
-            else:
-                require(frames == [], "empty input unexpectedly emitted protocol messages")
-            results.append({"name": name, "passed": True, "frames": frames,
-                            "stderr_bytes": stderr_bytes})
-        except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
-            results.append({"name": name, "passed": False, "failure": str(exc)})
-
-    name = "initialize_reply_arrives_before_eof"
-    try:
-        frames, stderr_bytes = exchange_before_eof(command, initialize(), timeout)
-        check_initialize(frames, 1)
-        results.append({"name": name, "passed": True, "frames": frames,
-                        "stderr_bytes": stderr_bytes})
-    except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
-        results.append({"name": name, "passed": False, "failure": str(exc)})
-
-    return results
+    return [case.run(command, timeout) for case in cases]
 
 
 def main():
@@ -228,10 +253,11 @@ def main():
     parser.add_argument("--timeout", type=float, default=5.0,
                         help="seconds per fresh process")
     parser.add_argument("--command", nargs=argparse.REMAINDER, required=True,
-                        help="absolute executable path followed by its arguments; put last")
+                        help="executable path followed by its arguments; put last")
     args = parser.parse_args()
-    if not args.command or not Path(args.command[0]).is_absolute():
-        parser.error("--command must begin with an absolute executable path")
+    if not args.command:
+        parser.error("--command must include an executable path")
+    args.command[0] = str(Path(args.command[0]).expanduser().resolve())
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
@@ -241,8 +267,8 @@ def main():
         "scope": "ACP initialization only; not full conformance",
         "command": args.command,
         "total": len(results),
-        "passed": sum(item["passed"] for item in results),
-        "results": results,
+        "passed": sum(result.passed for result in results),
+        "results": [result.to_dict() for result in results],
     }
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
