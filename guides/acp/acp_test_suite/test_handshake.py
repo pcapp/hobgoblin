@@ -1,6 +1,6 @@
-"""Check ACP initialization through a real subprocess.
+"""Test ACP initialization through a real subprocess.
 
-The checker starts the supplied command once per case, writes newline-delimited
+The test suite starts the supplied executable once per case, writes newline-delimited
 JSON-RPC requests to its stdin, and inspects the JSON lines written to stdout.
 It deliberately removes common model API keys and uses a temporary working
 directory: ACP initialization should not require a model or a repository cwd.
@@ -8,7 +8,7 @@ directory: ACP initialization should not require a model or a repository cwd.
 One probe keeps stdin open until the response arrives. This catches agents that
 buffer the initialization response until the client disconnects.
 
-This is a focused initialization check, not an ACP conformance suite.
+This is a focused initialization test, not an ACP conformance suite.
 Python 3.14+.
 """
 import argparse
@@ -29,7 +29,7 @@ MODEL_KEY_VARIABLES = (
 
 
 @dataclass
-class CheckResult:
+class TestResult:
     name: str
     passed: bool
     response_frames: list[dict] | None = None
@@ -45,27 +45,27 @@ class CheckResult:
 
 
 @dataclass
-class CheckCase:
+class TestCase:
     name: str
     requests: list[dict]
     expected_id: object | None = None
     reply_before_eof: bool = False
 
-    def run(self, command, timeout):
+    def run(self, executable, timeout):
         try:
             if self.reply_before_eof:
                 frames, stderr_bytes = exchange_before_eof(
-                    command, self.requests[0], timeout
+                    executable, self.requests[0], timeout
                 )
             else:
-                frames, stderr_bytes = exchange(command, self.requests, timeout)
+                frames, stderr_bytes = exchange(executable, self.requests, timeout)
 
             if self.expected_id is not None:
-                check_initialize_response(frames, self.expected_id)
+                validate_initialize_response(frames, self.expected_id)
             elif self.requests:
                 require(len(frames) == 2,
                         "expected init response and unknown-method response")
-                check_initialize_response([frames[0]], 1)
+                validate_initialize_response([frames[0]], 1)
                 error = frames[1]
                 require(error.get("id") == 2 and "result" not in error,
                         "bad error correlation")
@@ -75,18 +75,18 @@ class CheckCase:
                 require(frames == [],
                         "empty input unexpectedly emitted protocol messages")
 
-            return CheckResult(
+            return TestResult(
                 self.name,
                 True,
                 response_frames=frames,
                 stderr_bytes=stderr_bytes,
             )
         except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
-            return CheckResult(self.name, False, failure=str(exc))
+            return TestResult(self.name, False, failure=str(exc))
 
 
 def require(condition, message):
-    """Raise a readable check failure when an expected condition is false."""
+    """Raise a readable test failure when an expected condition is false."""
     if not condition:
         raise AssertionError(message)
 
@@ -122,7 +122,7 @@ def decode_stdout(stdout):
     return decoded
 
 
-def exchange(command, frames, timeout):
+def exchange(executable, frames, timeout):
     """Run one case against a fresh process, closing stdin after all requests.
 
     A fresh process prevents one case's initialization state from affecting the
@@ -132,7 +132,7 @@ def exchange(command, frames, timeout):
     payload = b"".join(json.dumps(frame).encode() + b"\n" for frame in frames)
     with tempfile.TemporaryDirectory(prefix="acp-probe-cwd-") as cwd:
         proc = subprocess.Popen(
-            command,
+            executable,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -149,7 +149,7 @@ def exchange(command, frames, timeout):
     return decode_stdout(stdout), len(stderr)
 
 
-def exchange_before_eof(command, frame, timeout):
+def exchange_before_eof(executable, frame, timeout):
     """Read one response while the child's stdin remains open.
 
     ``selectors`` supplies a deadline without starting a reader thread. After
@@ -159,7 +159,7 @@ def exchange_before_eof(command, frame, timeout):
     payload = json.dumps(frame).encode() + b"\n"
     with tempfile.TemporaryDirectory(prefix="acp-probe-cwd-") as cwd:
         proc = subprocess.Popen(
-            command,
+            executable,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -199,7 +199,7 @@ def exchange_before_eof(command, frame, timeout):
     return decode_stdout(first_line + remaining_stdout), len(stderr)
 
 
-def check_initialize_response(frames, expected_id):
+def validate_initialize_response(frames, expected_id):
     """Validate the fields and conservative capabilities of one init response."""
     require(len(frames) == 1, "expected exactly one initialization response")
 
@@ -226,18 +226,18 @@ def check_initialize_response(frames, expected_id):
             "initialization task must not require authentication")
 
 
-def run_checks(command, timeout):
+def run_tests(executable, timeout):
     """Run every initialization scenario and retain failures in one report.
 
     Cases are collected rather than aborted on the first failure so the report
     shows all observed protocol-boundary failures from one invocation.
     """
     cases = [
-        CheckCase("initialize_v1", [initialize()], 1),
-        CheckCase("preserve_string_request_id",
+        TestCase("initialize_v1", [initialize()], 1),
+        TestCase("preserve_string_request_id",
                   [initialize(request_id="init-A")], "init-A"),
-        CheckCase("unsupported_version_selects_v1", [initialize(version=2)], 1),
-        CheckCase(
+        TestCase("unsupported_version_selects_v1", [initialize(version=2)], 1),
+        TestCase(
             "client_capabilities_do_not_become_agent_promises",
             [initialize(capabilities={
                 "fs": {"readTextFile": True, "writeTextFile": True},
@@ -245,38 +245,38 @@ def run_checks(command, timeout):
             })],
             1,
         ),
-        CheckCase(
+        TestCase(
             "unknown_method_is_correlated_error",
             [initialize(), {"jsonrpc": "2.0", "id": 2,
                             "method": "lab/not-a-method", "params": {}}],
         ),
-        CheckCase("empty_stdin_exits_cleanly", []),
-        CheckCase("initialize_reply_arrives_before_eof", [initialize()], 1, True),
+        TestCase("empty_stdin_exits_cleanly", []),
+        TestCase("initialize_reply_arrives_before_eof", [initialize()], 1, True),
     ]
-    return [case.run(command, timeout) for case in cases]
+    return [case.run(executable, timeout) for case in cases]
 
 
 def main():
-    """Parse checker options, run the probes, and optionally write a JSON report."""
+    """Parse test options, run the cases, and optionally write a JSON report."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path,
                         help="write actual results as JSON (overwrites)")
     parser.add_argument("--timeout", type=float, default=5.0,
                         help="seconds per fresh process")
-    parser.add_argument("--command", nargs=argparse.REMAINDER, required=True,
+    parser.add_argument("--executable", nargs=argparse.REMAINDER, required=True,
                         help="executable path followed by its arguments; put last")
     args = parser.parse_args()
-    if not args.command:
-        parser.error("--command must include an executable path")
-    args.command[0] = str(Path(args.command[0]).expanduser().resolve())
+    if not args.executable:
+        parser.error("--executable must include an executable path")
+    args.executable[0] = str(Path(args.executable[0]).expanduser().resolve())
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
-    results = run_checks(args.command, args.timeout)
+    results = run_tests(args.executable, args.timeout)
     report = {
-        "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "tested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "scope": "ACP initialization only; not full conformance",
-        "command": args.command,
+        "executable": args.executable,
         "total": len(results),
         "passed": sum(result.passed for result in results),
         "results": [result.to_dict() for result in results],
