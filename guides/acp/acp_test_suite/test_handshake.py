@@ -11,6 +11,7 @@ buffer the initialization response until the client disconnects.
 This is a focused initialization test, not an ACP conformance suite.
 Python 3.14+.
 """
+from abc import ABC, abstractmethod
 import argparse
 from dataclasses import dataclass
 import datetime
@@ -45,44 +46,83 @@ class TestResult:
 
 
 @dataclass
-class TestCase:
+class TestCase(ABC):
     name: str
-    requests: list[dict]
-    expected_id: object | None = None
-    reply_before_eof: bool = False
+
+    @abstractmethod
+    def execute(self, agent) -> tuple[list[dict], int]:
+        """Run one protocol scenario and return its response frames and stderr size."""
+        raise NotImplementedError
 
     def run(self, executable, timeout):
         try:
-            if self.reply_before_eof:
-                frames, stderr_bytes = exchange_before_eof(
-                    executable, self.requests[0], timeout
-                )
-            else:
-                frames, stderr_bytes = exchange(executable, self.requests, timeout)
-
-            if self.expected_id is not None:
-                validate_initialize_response(frames, self.expected_id)
-            elif self.requests:
-                require(len(frames) == 2,
-                        "expected init response and unknown-method response")
-                validate_initialize_response([frames[0]], 1)
-                error = frames[1]
-                require(error.get("id") == 2 and "result" not in error,
-                        "bad error correlation")
-                require(error["error"]["code"] == -32601,
-                        "expected Method not found (-32601)")
-            else:
-                require(frames == [],
-                        "empty input unexpectedly emitted protocol messages")
-
+            with AgentProcess(executable, timeout) as agent:
+                response_frames, stderr_bytes = self.execute(agent)
             return TestResult(
                 self.name,
                 True,
-                response_frames=frames,
+                response_frames=response_frames,
                 stderr_bytes=stderr_bytes,
             )
         except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
             return TestResult(self.name, False, failure=str(exc))
+
+
+@dataclass
+class InitializeTestCase(TestCase):
+    request: dict
+    expected_id: object
+
+    def execute(self, agent):
+        agent.send(self.request)
+        response_frames, stderr_bytes = agent.finish()
+        validate_initialize_response(response_frames, self.expected_id)
+        return response_frames, stderr_bytes
+
+
+class InitializeBeforeEofTestCase(InitializeTestCase):
+    def execute(self, agent):
+        agent.send(self.request)
+        first_frame = agent.read()
+        remaining_frames, stderr_bytes = agent.finish()
+        response_frames = [first_frame, *remaining_frames]
+        validate_initialize_response(response_frames, self.expected_id)
+        return response_frames, stderr_bytes
+
+
+@dataclass
+class UnknownMethodTestCase(TestCase):
+    request: dict
+
+    def execute(self, agent):
+        agent.send(initialize())
+        agent.send(self.request)
+        response_frames, stderr_bytes = agent.finish()
+        require(len(response_frames) == 2,
+                "expected init response and unknown-method response")
+        validate_initialize_response([response_frames[0]], 1)
+        error = response_frames[1]
+        require(error.get("id") == self.request["id"] and "result" not in error,
+                "bad error correlation")
+        require(error["error"]["code"] == -32601,
+                "expected Method not found (-32601)")
+        return response_frames, stderr_bytes
+
+
+class EmptyInputTestCase(TestCase):
+    def execute(self, agent):
+        response_frames, stderr_bytes = agent.finish()
+        require(response_frames == [],
+                "empty input unexpectedly emitted protocol messages")
+        return response_frames, stderr_bytes
+
+
+@dataclass
+class TestSuite:
+    cases: list[TestCase]
+
+    def run(self, executable, timeout):
+        return [case.run(executable, timeout) for case in self.cases]
 
 
 def require(condition, message):
@@ -189,22 +229,6 @@ def decode_stdout(stdout):
     return decoded
 
 
-def exchange(executable, frames, timeout):
-    """Run one case against a fresh process, closing stdin after all requests."""
-    with AgentProcess(executable, timeout) as agent:
-        for frame in frames:
-            agent.send(frame)
-        return agent.finish()
-
-
-def exchange_before_eof(executable, frame, timeout):
-    """Read one response while the child's stdin remains open."""
-    with AgentProcess(executable, timeout) as agent:
-        agent.send(frame)
-        first_frame = agent.read()
-        remaining_frames, stderr_bytes = agent.finish()
-        return [first_frame, *remaining_frames], stderr_bytes
-
 
 def validate_initialize_response(frames, expected_id):
     """Validate the fields and conservative capabilities of one init response."""
@@ -239,28 +263,39 @@ def run_tests(executable, timeout):
     Cases are collected rather than aborted on the first failure so the report
     shows all observed protocol-boundary failures from one invocation.
     """
-    cases = [
-        TestCase("initialize_v1", [initialize()], 1),
-        TestCase("preserve_string_request_id",
-                  [initialize(request_id="init-A")], "init-A"),
-        TestCase("unsupported_version_selects_v1", [initialize(version=2)], 1),
-        TestCase(
-            "client_capabilities_do_not_become_agent_promises",
-            [initialize(capabilities={
-                "fs": {"readTextFile": True, "writeTextFile": True},
-                "terminal": True,
-            })],
+    suite = TestSuite([
+        InitializeTestCase("initialize_v1", initialize(), 1),
+        InitializeTestCase(
+            "preserve_string_request_id",
+            initialize(request_id="init-A"),
+            "init-A",
+        ),
+        InitializeTestCase(
+            "unsupported_version_selects_v1",
+            initialize(version=2),
             1,
         ),
-        TestCase(
-            "unknown_method_is_correlated_error",
-            [initialize(), {"jsonrpc": "2.0", "id": 2,
-                            "method": "lab/not-a-method", "params": {}}],
+        InitializeTestCase(
+            "client_capabilities_do_not_become_agent_promises",
+            initialize(capabilities={
+                "fs": {"readTextFile": True, "writeTextFile": True},
+                "terminal": True,
+            }),
+            1,
         ),
-        TestCase("empty_stdin_exits_cleanly", []),
-        TestCase("initialize_reply_arrives_before_eof", [initialize()], 1, True),
-    ]
-    return [case.run(executable, timeout) for case in cases]
+        UnknownMethodTestCase(
+            "unknown_method_is_correlated_error",
+            {"jsonrpc": "2.0", "id": 2,
+             "method": "lab/not-a-method", "params": {}},
+        ),
+        EmptyInputTestCase("empty_stdin_exits_cleanly"),
+        InitializeBeforeEofTestCase(
+            "initialize_reply_arrives_before_eof",
+            initialize(),
+            1,
+        ),
+    ])
+    return suite.run(executable, timeout)
 
 
 def main():
