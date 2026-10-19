@@ -1,4 +1,4 @@
-"""Test ACP initialization through a real subprocess.
+"""Test ACP initialization and session creation through a real subprocess.
 
 The test suite starts the supplied executable once per case, writes newline-delimited
 JSON-RPC requests to its stdin, and inspects the JSON lines written to stdout.
@@ -218,10 +218,22 @@ class SessionCreationTestCase(TestCase):
 
 @dataclass
 class TestSuite:
+    scope: str
     cases: list[TestCase]
 
     def run(self, executable, timeout):
         return [case.run(executable, timeout) for case in self.cases]
+
+    def report(self, executable, timeout):
+        results = self.run(executable, timeout)
+        return {
+            "tested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "scope": self.scope,
+            "executable": executable,
+            "total": len(results),
+            "passed": sum(result.passed for result in results),
+            "results": [result.to_dict() for result in results],
+        }
 
 
 def require(condition, message):
@@ -379,13 +391,11 @@ def validate_session_new_response(frame, expected_id):
     return session_id
 
 
-def run_tests(executable, timeout):
-    """Run every initialization scenario and retain failures in one report.
-
-    Cases are collected rather than aborted on the first failure so the report
-    shows all observed protocol-boundary failures from one invocation.
-    """
-    suite = TestSuite([
+def build_test_suite():
+    """Build the focused ACP test suite."""
+    return TestSuite(
+        "ACP initialization and session creation; not full conformance",
+        [
         InitializeTestCase("initialize_v1", initialize(), 1),
         InitializeTestCase(
             "preserve_string_request_id",
@@ -417,8 +427,8 @@ def run_tests(executable, timeout):
             initialize(),
             1,
         ),
-    ])
-    return suite.run(executable, timeout)
+        ],
+    )
 
 
 def main():
@@ -437,15 +447,8 @@ def main():
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
-    results = run_tests(args.executable, args.timeout)
-    report = {
-        "tested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "scope": "ACP initialization and session creation; not full conformance",
-        "executable": args.executable,
-        "total": len(results),
-        "passed": sum(result.passed for result in results),
-        "results": [result.to_dict() for result in results],
-    }
+    suite = build_test_suite()
+    report = suite.report(args.executable, args.timeout)
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
