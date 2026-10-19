@@ -11,16 +11,17 @@ buffer the initialization response until the client disconnects.
 This is a focused initialization test, not an ACP conformance suite.
 Python 3.14+.
 """
-from abc import ABC, abstractmethod
+
 import argparse
-from dataclasses import dataclass
 import datetime
 import json
 import os
-from pathlib import Path
 import selectors
 import subprocess
 import tempfile
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
@@ -59,11 +60,11 @@ class AgentCapabilities(ProtocolModel):
 
     load_session: bool = Field(False, alias="loadSession")
     prompt: PromptCapabilities = Field(
-        default_factory=PromptCapabilities,
+        default_factory=lambda: PromptCapabilities(embeddedContext=False),
         alias="promptCapabilities",
     )
     mcp: McpCapabilities = Field(
-        default_factory=McpCapabilities,
+        default_factory=lambda: McpCapabilities(),
         alias="mcpCapabilities",
     )
 
@@ -112,11 +113,7 @@ class TestResult:
     failure: str | None = None
 
     def to_dict(self):
-        return {
-            key: value
-            for key, value in vars(self).items()
-            if value is not None
-        }
+        return {key: value for key, value in vars(self).items() if value is not None}
 
 
 @dataclass
@@ -150,8 +147,9 @@ class InitializeTestCase(TestCase):
     def execute(self, agent):
         agent.send(self.request)
         response_frames, stderr_bytes = agent.finish()
-        require(len(response_frames) == 1,
-                "expected exactly one initialization response")
+        require(
+            len(response_frames) == 1, "expected exactly one initialization response"
+        )
         validate_initialize_response(response_frames[0], self.expected_id)
         return response_frames, stderr_bytes
 
@@ -162,8 +160,9 @@ class InitializeBeforeEofTestCase(InitializeTestCase):
         first_frame = agent.read()
         remaining_frames, stderr_bytes = agent.finish()
         response_frames = [first_frame, *remaining_frames]
-        require(len(response_frames) == 1,
-                "expected exactly one initialization response")
+        require(
+            len(response_frames) == 1, "expected exactly one initialization response"
+        )
         validate_initialize_response(response_frames[0], self.expected_id)
         return response_frames, stderr_bytes
 
@@ -176,23 +175,27 @@ class UnknownMethodTestCase(TestCase):
         agent.send(initialize())
         agent.send(self.request)
         response_frames, stderr_bytes = agent.finish()
-        require(len(response_frames) == 2,
-                "expected init response and unknown-method response")
+        require(
+            len(response_frames) == 2,
+            "expected init response and unknown-method response",
+        )
         validate_initialize_response(response_frames[0], 1)
         error = ErrorResponse.model_validate(response_frames[1])
-        require(error.id == self.request["id"]
-                and type(error.id) is type(self.request["id"]),
-                "bad error correlation")
-        require(error.error.code == -32601,
-                "expected Method not found (-32601)")
+        require(
+            error.id == self.request["id"]
+            and type(error.id) is type(self.request["id"]),
+            "bad error correlation",
+        )
+        require(error.error.code == -32601, "expected Method not found (-32601)")
         return response_frames, stderr_bytes
 
 
 class EmptyInputTestCase(TestCase):
     def execute(self, agent):
         response_frames, stderr_bytes = agent.finish()
-        require(response_frames == [],
-                "empty input unexpectedly emitted protocol messages")
+        require(
+            response_frames == [], "empty input unexpectedly emitted protocol messages"
+        )
         return response_frames, stderr_bytes
 
 
@@ -206,13 +209,16 @@ class SessionCreationTestCase(TestCase):
         agent.send(new_session(3, second_cwd))
         response_frames, stderr_bytes = agent.finish()
 
-        require(len(response_frames) == 3,
-                "expected initialize and two session responses")
+        require(
+            len(response_frames) == 3, "expected initialize and two session responses"
+        )
         validate_initialize_response(response_frames[0], 1)
         first_session_id = validate_session_new_response(response_frames[1], 2)
         second_session_id = validate_session_new_response(response_frames[2], 3)
-        require(first_session_id != second_session_id,
-                "session/new returned duplicate session IDs")
+        require(
+            first_session_id != second_session_id,
+            "session/new returned duplicate session IDs",
+        )
         return response_frames, stderr_bytes
 
 
@@ -227,7 +233,7 @@ class TestSuite:
     def report(self, executable, timeout):
         results = self.run(executable, timeout)
         return {
-            "tested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "tested_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "scope": self.scope,
             "executable": executable,
             "total": len(results),
@@ -255,9 +261,7 @@ class AgentProcess:
 
     def __init__(self, executable, timeout):
         self.timeout = timeout
-        self._temporary_directory = tempfile.TemporaryDirectory(
-            prefix="acp-probe-cwd-"
-        )
+        self._temporary_directory = tempfile.TemporaryDirectory(prefix="acp-probe-cwd-")
         self.process = subprocess.Popen(
             executable,
             stdin=subprocess.PIPE,
@@ -295,8 +299,10 @@ class AgentProcess:
         selector = selectors.DefaultSelector()
         try:
             selector.register(child_stdout, selectors.EVENT_READ)
-            require(selector.select(self.timeout),
-                    "response did not arrive while stdin remained open")
+            require(
+                selector.select(self.timeout),
+                "response did not arrive while stdin remained open",
+            )
             line = child_stdout.readline()
             require(line, "stdout closed before response")
         finally:
@@ -312,12 +318,16 @@ class AgentProcess:
         self.close_stdin()
         try:
             stdout, stderr = self.process.communicate(timeout=self.timeout)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
             self.process.kill()
             self.process.communicate()
-            raise AssertionError("process did not finish after EOF before timeout")
-        require(self.process.returncode == 0,
-                "nonzero exit: " + str(self.process.returncode))
+            raise AssertionError(
+                "process did not finish after EOF before timeout"
+            ) from error
+        require(
+            self.process.returncode == 0,
+            "nonzero exit: " + str(self.process.returncode),
+        )
         return decode_stdout(stdout), len(stderr)
 
 
@@ -352,19 +362,22 @@ def decode_stdout(stdout):
     require(not stdout or stdout.endswith(b"\n"), "stdout frame missing newline")
     decoded = [json.loads(line) for line in stdout.splitlines()]
     require(all(isinstance(frame, dict) for frame in decoded), "non-object JSON frame")
-    require(all(frame.get("jsonrpc") == "2.0" for frame in decoded),
-            "bad JSON-RPC version")
+    require(
+        all(frame.get("jsonrpc") == "2.0" for frame in decoded), "bad JSON-RPC version"
+    )
     return decoded
-
 
 
 def validate_initialize_response(frame, expected_id):
     """Validate one successful initialization response."""
     response = InitializeResponse.model_validate(frame)
-    require(response.id == expected_id and type(response.id) is type(expected_id),
-            "request ID/value/type mismatch")
-    require(response.result.protocol_version == 1,
-            "expected selected protocol version 1")
+    require(
+        response.id == expected_id and type(response.id) is type(expected_id),
+        "request ID/value/type mismatch",
+    )
+    require(
+        response.result.protocol_version == 1, "expected selected protocol version 1"
+    )
 
     capabilities = response.result.agent_capabilities
     unsupported_capabilities = (
@@ -375,17 +388,23 @@ def validate_initialize_response(frame, expected_id):
         capabilities.mcp.http,
         capabilities.mcp.sse,
     )
-    require(not any(unsupported_capabilities),
-            "agent promises an unimplemented optional capability")
-    require(response.result.auth_methods == [],
-            "initialization task must not require authentication")
+    require(
+        not any(unsupported_capabilities),
+        "agent promises an unimplemented optional capability",
+    )
+    require(
+        response.result.auth_methods == [],
+        "initialization task must not require authentication",
+    )
 
 
 def validate_session_new_response(frame, expected_id):
     """Validate one successful session/new response and return its UUID."""
     response = SessionNewResponse.model_validate(frame)
-    require(response.id == expected_id and type(response.id) is type(expected_id),
-            "request ID/value/type mismatch")
+    require(
+        response.id == expected_id and type(response.id) is type(expected_id),
+        "request ID/value/type mismatch",
+    )
     session_id = UUID(response.result.session_id)
     require(session_id.version == 7, "expected a UUID v7 session ID")
     return session_id
@@ -396,37 +415,38 @@ def build_test_suite():
     return TestSuite(
         "ACP initialization and session creation; not full conformance",
         [
-        InitializeTestCase("initialize_v1", initialize(), 1),
-        InitializeTestCase(
-            "preserve_string_request_id",
-            initialize(request_id="init-A"),
-            "init-A",
-        ),
-        InitializeTestCase(
-            "unsupported_version_selects_v1",
-            initialize(version=2),
-            1,
-        ),
-        InitializeTestCase(
-            "client_capabilities_do_not_become_agent_promises",
-            initialize(capabilities={
-                "fs": {"readTextFile": True, "writeTextFile": True},
-                "terminal": True,
-            }),
-            1,
-        ),
-        UnknownMethodTestCase(
-            "unknown_method_is_correlated_error",
-            {"jsonrpc": "2.0", "id": 2,
-             "method": "lab/not-a-method", "params": {}},
-        ),
-        EmptyInputTestCase("empty_stdin_exits_cleanly"),
-        SessionCreationTestCase("create_two_distinct_sessions"),
-        InitializeBeforeEofTestCase(
-            "initialize_reply_arrives_before_eof",
-            initialize(),
-            1,
-        ),
+            InitializeTestCase("initialize_v1", initialize(), 1),
+            InitializeTestCase(
+                "preserve_string_request_id",
+                initialize(request_id="init-A"),
+                "init-A",
+            ),
+            InitializeTestCase(
+                "unsupported_version_selects_v1",
+                initialize(version=2),
+                1,
+            ),
+            InitializeTestCase(
+                "client_capabilities_do_not_become_agent_promises",
+                initialize(
+                    capabilities={
+                        "fs": {"readTextFile": True, "writeTextFile": True},
+                        "terminal": True,
+                    }
+                ),
+                1,
+            ),
+            UnknownMethodTestCase(
+                "unknown_method_is_correlated_error",
+                {"jsonrpc": "2.0", "id": 2, "method": "lab/not-a-method", "params": {}},
+            ),
+            EmptyInputTestCase("empty_stdin_exits_cleanly"),
+            SessionCreationTestCase("create_two_distinct_sessions"),
+            InitializeBeforeEofTestCase(
+                "initialize_reply_arrives_before_eof",
+                initialize(),
+                1,
+            ),
         ],
     )
 
@@ -434,12 +454,18 @@ def build_test_suite():
 def main():
     """Parse test options, run the cases, and optionally write a JSON report."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--report", type=Path,
-                        help="write actual results as JSON (overwrites)")
-    parser.add_argument("--timeout", type=float, default=5.0,
-                        help="seconds per fresh process")
-    parser.add_argument("--executable", nargs=argparse.REMAINDER, required=True,
-                        help="executable path followed by its arguments; put last")
+    parser.add_argument(
+        "--report", type=Path, help="write actual results as JSON (overwrites)"
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=5.0, help="seconds per fresh process"
+    )
+    parser.add_argument(
+        "--executable",
+        nargs=argparse.REMAINDER,
+        required=True,
+        help="executable path followed by its arguments; put last",
+    )
     args = parser.parse_args()
     if not args.executable:
         parser.error("--executable must include an executable path")
