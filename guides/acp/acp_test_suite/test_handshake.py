@@ -99,6 +99,73 @@ def environment_without_model_keys():
     return env
 
 
+class AgentProcess:
+    """Drive one isolated ACP subprocess through newline-delimited JSON."""
+
+    def __init__(self, executable, timeout):
+        self.timeout = timeout
+        self._temporary_directory = tempfile.TemporaryDirectory(
+            prefix="acp-probe-cwd-"
+        )
+        self.process = subprocess.Popen(
+            executable,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=self._temporary_directory.name,
+            env=environment_without_model_keys(),
+        )
+        assert self.process.stdin is not None
+        assert self.process.stdout is not None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        if self.process.poll() is None:
+            self.process.kill()
+            self.process.communicate()
+        self._temporary_directory.cleanup()
+
+    def send(self, frame):
+        child_stdin = self.process.stdin
+        assert child_stdin is not None
+        payload = json.dumps(frame).encode() + b"\n"
+        child_stdin.write(payload)
+        child_stdin.flush()
+
+    def read(self):
+        child_stdout = self.process.stdout
+        assert child_stdout is not None
+        selector = selectors.DefaultSelector()
+        try:
+            selector.register(child_stdout, selectors.EVENT_READ)
+            require(selector.select(self.timeout),
+                    "response did not arrive while stdin remained open")
+            line = child_stdout.readline()
+            require(line, "stdout closed before response")
+        finally:
+            selector.close()
+        return decode_stdout(line)[0]
+
+    def close_stdin(self):
+        if self.process.stdin is not None:
+            self.process.stdin.close()
+            self.process.stdin = None
+
+    def finish(self):
+        self.close_stdin()
+        try:
+            stdout, stderr = self.process.communicate(timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.communicate()
+            raise AssertionError("process did not finish after EOF before timeout")
+        require(self.process.returncode == 0,
+                "nonzero exit: " + str(self.process.returncode))
+        return decode_stdout(stdout), len(stderr)
+
+
 def initialize(version=1, request_id: object = 1, capabilities=None):
     """Build one ACP initialize request with caller-controlled test values."""
     return {
@@ -123,80 +190,20 @@ def decode_stdout(stdout):
 
 
 def exchange(executable, frames, timeout):
-    """Run one case against a fresh process, closing stdin after all requests.
-
-    A fresh process prevents one case's initialization state from affecting the
-    next. Returning the stderr byte count records diagnostic activity without
-    copying potentially sensitive diagnostic text into the report.
-    """
-    payload = b"".join(json.dumps(frame).encode() + b"\n" for frame in frames)
-    with tempfile.TemporaryDirectory(prefix="acp-probe-cwd-") as cwd:
-        proc = subprocess.Popen(
-            executable,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-            env=environment_without_model_keys(),
-        )
-        try:
-            stdout, stderr = proc.communicate(payload, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            raise AssertionError("process did not finish after EOF before timeout")
-    require(proc.returncode == 0, "nonzero exit: " + str(proc.returncode))
-    return decode_stdout(stdout), len(stderr)
+    """Run one case against a fresh process, closing stdin after all requests."""
+    with AgentProcess(executable, timeout) as agent:
+        for frame in frames:
+            agent.send(frame)
+        return agent.finish()
 
 
 def exchange_before_eof(executable, frame, timeout):
-    """Read one response while the child's stdin remains open.
-
-    ``selectors`` supplies a deadline without starting a reader thread. After
-    the first response arrives, the function closes stdin and requires the child
-    to terminate cleanly.
-    """
-    payload = json.dumps(frame).encode() + b"\n"
-    with tempfile.TemporaryDirectory(prefix="acp-probe-cwd-") as cwd:
-        proc = subprocess.Popen(
-            executable,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-            env=environment_without_model_keys(),
-        )
-        child_stdin = proc.stdin
-        child_stdout = proc.stdout
-        assert child_stdin is not None
-        assert child_stdout is not None
-
-        selector = selectors.DefaultSelector()
-        try:
-            child_stdin.write(payload)
-            child_stdin.flush()
-            selector.register(child_stdout, selectors.EVENT_READ)
-            require(selector.select(timeout),
-                    "initialization response did not arrive while stdin remained open")
-            first_line = child_stdout.readline()
-            require(first_line, "stdout closed before initialization response")
-
-            child_stdin.close()
-            proc.stdin = None
-            try:
-                remaining_stdout, stderr = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.communicate()
-                raise AssertionError("process did not finish after EOF before timeout")
-        finally:
-            selector.close()
-            if proc.poll() is None:
-                proc.kill()
-                proc.communicate()
-
-    require(proc.returncode == 0, "nonzero exit: " + str(proc.returncode))
-    return decode_stdout(first_line + remaining_stdout), len(stderr)
+    """Read one response while the child's stdin remains open."""
+    with AgentProcess(executable, timeout) as agent:
+        agent.send(frame)
+        first_frame = agent.read()
+        remaining_frames, stderr_bytes = agent.finish()
+        return [first_frame, *remaining_frames], stderr_bytes
 
 
 def validate_initialize_response(frames, expected_id):
