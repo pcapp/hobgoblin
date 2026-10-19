@@ -32,7 +32,7 @@ MODEL_KEY_VARIABLES = (
 class CheckResult:
     name: str
     passed: bool
-    frames: list[dict] | None = None
+    response_frames: list[dict] | None = None
     stderr_bytes: int | None = None
     failure: str | None = None
 
@@ -61,11 +61,11 @@ class CheckCase:
                 frames, stderr_bytes = exchange(command, self.requests, timeout)
 
             if self.expected_id is not None:
-                check_initialize(frames, self.expected_id)
+                check_initialize_response(frames, self.expected_id)
             elif self.requests:
                 require(len(frames) == 2,
                         "expected init response and unknown-method response")
-                check_initialize([frames[0]], 1)
+                check_initialize_response([frames[0]], 1)
                 error = frames[1]
                 require(error.get("id") == 2 and "result" not in error,
                         "bad error correlation")
@@ -75,7 +75,12 @@ class CheckCase:
                 require(frames == [],
                         "empty input unexpectedly emitted protocol messages")
 
-            return CheckResult(self.name, True, frames, stderr_bytes)
+            return CheckResult(
+                self.name,
+                True,
+                response_frames=frames,
+                stderr_bytes=stderr_bytes,
+            )
         except (AssertionError, OSError, ValueError, KeyError, TypeError) as exc:
             return CheckResult(self.name, False, failure=str(exc))
 
@@ -118,7 +123,7 @@ def decode_stdout(stdout):
 
 
 def exchange(command, frames, timeout):
-    """Run one isolated exchange, closing stdin after writing all requests.
+    """Run one case against a fresh process, closing stdin after all requests.
 
     A fresh process prevents one case's initialization state from affecting the
     next. Returning the stderr byte count records diagnostic activity without
@@ -194,16 +199,22 @@ def exchange_before_eof(command, frame, timeout):
     return decode_stdout(first_line + remaining_stdout), len(stderr)
 
 
-def check_initialize(frames, expected_id):
+def check_initialize_response(frames, expected_id):
     """Validate the fields and conservative capabilities of one init response."""
     require(len(frames) == 1, "expected exactly one initialization response")
+
+    # Ensure JSON-RPC response shape.
     frame = frames[0]
     require(frame.get("id") == expected_id and type(frame.get("id")) is type(expected_id),
             "request ID/value/type mismatch")
     require("error" not in frame, "initialization returned an error")
+
+    # Ensure we support ACP version 1.
     result = frame["result"]
     require(type(result.get("protocolVersion")) is int and result["protocolVersion"] == 1,
             "expected selected protocol version 1")
+
+    # Validate agentic capabilities.
     caps = result["agentCapabilities"]
     require(isinstance(caps, dict), "capabilities must be an object")
     require(not caps.get("loadSession", False), "agent must not promise session loading")
