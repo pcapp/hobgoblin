@@ -30,6 +30,10 @@ type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
 const INVALID_PARAMS_CODE: i32 = -32602;
 const METHOD_NOT_FOUND_CODE: i32 = -32601;
 const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
+#[allow(
+    dead_code,
+    reason = "used by staged Task 6 session/prompt dispatch work"
+)]
 const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
 
 struct ConnectionState {
@@ -83,6 +87,10 @@ struct NewSessionParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(
+    dead_code,
+    reason = "used by staged Task 6 session/prompt dispatch work"
+)]
 struct PromptParams {
     session_id: SessionId,
     prompt: Vec<PromptContentBlock>,
@@ -90,6 +98,10 @@ struct PromptParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(
+    dead_code,
+    reason = "used by staged Task 6 session/prompt dispatch work"
+)]
 enum PromptContentBlock {
     Text {
         text: String,
@@ -98,6 +110,10 @@ enum PromptContentBlock {
     Unsupported,
 }
 
+#[allow(
+    dead_code,
+    reason = "used by staged Task 6 session/prompt dispatch work"
+)]
 fn join_text_blocks(blocks: Vec<PromptContentBlock>) -> Option<String> {
     let mut text_blocks = Vec::new();
 
@@ -111,11 +127,15 @@ fn join_text_blocks(blocks: Vec<PromptContentBlock>) -> Option<String> {
     Some(text_blocks.join("\n"))
 }
 
+#[allow(
+    dead_code,
+    reason = "used by staged Task 6 session/prompt dispatch work"
+)]
 fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), ()> {
     let PromptParams { session_id, prompt } =
         serde_json::from_value(params.unwrap_or(Value::Null)).map_err(|_| ())?;
 
-    if prompt.len() == 0 {
+    if prompt.is_empty() {
         return Err(());
     }
 
@@ -197,6 +217,10 @@ impl ErrorResponse {
         Self::new(id, METHOD_NOT_FOUND_CODE, "Method not found")
     }
 
+    #[allow(
+        dead_code,
+        reason = "used by staged Task 6 session/prompt dispatch work"
+    )]
     fn resource_not_found(id: Value) -> Self {
         Self::new(id, RESOURCE_NOT_FOUND_CODE, "Resource not found")
     }
