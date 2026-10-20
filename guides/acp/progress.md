@@ -23,6 +23,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
+| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt wire parsing and six focused tests are complete; dispatch integration is next |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -501,6 +502,42 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 3. Introduce prompt handling incrementally; address conversation exclusivity and `Send` compiler errors only when the first spawned prompt task requires those decisions.
 4. Preserve the completed Task 5 acceptance suite while adding scripted-model duplex coverage for prompt update-before-response ordering.
 
+## Session checkpoint — 2026-10-20 (Task 6 prompt parsing)
+
+### Current understanding
+
+- A boundary is where responsibilities, ownership, data shape, or error contracts change; the relevant M6 boundaries are ACP framing, dispatch, the session registry, the shared agent core, and the model trait.
+- `session/prompt` carries one user message as an ordered array of typed content blocks. Serde's `type` tag selects a Rust enum variant.
+- The current core accepts one string, so the ACP frontend owns the temporary flattening policy. Owned block strings can move into the joined prompt without cloning.
+- `map_err`, `ok_or`, and `?` normalize deserialization and unsupported-content failures into the parser's single invalid-parameters outcome.
+
+### Working Task 6 decisions
+
+- Return ACP `-32002` (`Resource not found`) for a validly shaped session ID that is absent from the connection registry.
+- Accept only text blocks in M6 and join multiple blocks with one newline. Defer `resource_link` and multimodal input to a later compatibility pass.
+- Reject an empty prompt array, but allow an array containing an empty text block.
+- Use concise contract-first implementation guidance: target, inputs, output, expected behavior, and small examples; provide exact code only on request or when blocked.
+
+### Source checkpoint
+
+- Branch `master` is clean at implementation commit `5ae5305` before this documentation wrap-up.
+- `src/acp.rs` defines typed prompt parameters, a tagged text/unsupported content enum, newline joining, invalid-input normalization, and the selected resource-not-found error vocabulary.
+- Six focused tests cover joining, unsupported poisoning, valid wire parsing, unsupported wire content, malformed parameters, and an empty prompt array.
+- `cargo fmt --check` and all 54 Rust tests passed before the implementation commit was pushed to `origin/master`.
+
+### Exact resume point
+
+1. Add an async session lookup helper taking `&SessionRegistry` and `&SessionId` and returning a cloned `Option<SessionHandle>` without retaining the registry read guard.
+2. Add focused existing-session and unknown-session tests for that helper.
+3. Use the prompt parser and lookup in the first `session/prompt` dispatch path: malformed input becomes `-32602`, and an unknown session becomes `-32002`.
+4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into a spawned task.
+
+### Unverified or deferred
+
+- Prompt parsing is not connected to dispatch, no model turn runs over ACP, and the resource-not-found helper is not yet used; its dead-code warnings are expected.
+- The black-box ACP suite, Ruff checks, Clippy, and a Zed manual demo were not run for this partial Task 6 checkpoint.
+- `resource_link`, image, audio, and embedded-resource prompt content remain unsupported and must be revisited before claiming broad ACP v1 compatibility.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -561,6 +598,17 @@ Tests run: 48
 Tests passed: 48
 ACP test-suite cases passed: 8 of 8
 Test-suite report path: /tmp/acp-task5-test-suite.json
+```
+
+```text
+Date: 2026-10-20
+Task: 6 — Prompt turn (partial checkpoint)
+Commit or tree state: master at 5ae5305; working tree clean before documentation wrap-up
+Commands: cargo fmt --check; cargo test
+Exit statuses: 0; 0
+Tests run: 54
+Tests passed: 54
+Checker report path: none
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.

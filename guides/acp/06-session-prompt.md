@@ -1,6 +1,13 @@
 # Task 6 — Run a prompt turn over ACP
 
-> **Draft.** Refine this from the Task 5 code before starting.
+> **In progress.** The prompt wire types and focused parsing coverage are complete; dispatch integration is next.
+
+## Working decisions
+
+- A syntactically valid but unknown session ID returns ACP `-32002` (`Resource not found`).
+- M6 accepts only text content blocks. `resource_link` and multimodal blocks are deliberately deferred, so this milestone does not yet satisfy the current ACP v1 baseline for prompt content.
+- Multiple text blocks are joined in order with one newline.
+- An empty prompt block array is invalid; an array containing an empty text block remains valid.
 
 ## End goal
 
@@ -18,11 +25,11 @@ The reader dispatches each `session/prompt` into its own spawned task so it can 
 
 ### Making the core `Send`
 
-`tokio::spawn` requires a `Send` future. Today `Model::complete` is an `async fn` in a trait, which does not promise a `Send` future, and errors are `Box<dyn std::error::Error>`, which is not `Send`. Expect compiler errors here and work through them yourself: they are the lesson. Look up `Send + Sync` error boxes and how to require `Send` from a trait's async method.
+`tokio::spawn` requires a `Send` future. ACP's transport error alias is already `Send + Sync`, but `Model::complete` is an `async fn` in a trait that does not promise a `Send` future, and the shared agent core still returns `Box<dyn std::error::Error>`. Expect compiler errors here and work through them yourself: they are the lesson. Look up `Send + Sync` error boxes and how to require `Send` from a trait's async method.
 
 ### Who holds the conversation during a turn
 
-`agent::turn` needs `&mut Conversation` across many `.await`s. Holding a std mutex guard that long is the Task 5 anti-pattern. Decide how a turn gets exclusive access to its session's conversation (for example, taking it out of the registry for the turn and putting it back afterwards) and what happens if a second prompt arrives for a busy session.
+`agent::turn` needs `&mut Session` across many `.await`s. Holding a mutex guard that long without an explicit ownership decision is the Task 5 anti-pattern. Decide how a turn gets exclusive access to its session and what happens if a second prompt arrives for a busy session.
 
 ### Provider configuration happens late
 
