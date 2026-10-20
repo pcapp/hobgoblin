@@ -30,6 +30,7 @@ type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
 const INVALID_PARAMS_CODE: i32 = -32602;
 const METHOD_NOT_FOUND_CODE: i32 = -32601;
 const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
+const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
 
 struct ConnectionState {
     initialized: bool,
@@ -78,6 +79,49 @@ struct NewSessionParams {
         reason = "ACP requires mcpServers, but MCP support is intentionally deferred"
     )]
     mcp_servers: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptParams {
+    session_id: SessionId,
+    prompt: Vec<PromptContentBlock>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum PromptContentBlock {
+    Text {
+        text: String,
+    },
+    #[serde(other)]
+    Unsupported,
+}
+
+fn join_text_blocks(blocks: Vec<PromptContentBlock>) -> Option<String> {
+    let mut text_blocks = Vec::new();
+
+    for block in blocks {
+        match block {
+            PromptContentBlock::Text { text } => text_blocks.push(text),
+            PromptContentBlock::Unsupported => return None,
+        }
+    }
+
+    Some(text_blocks.join("\n"))
+}
+
+fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), ()> {
+    let PromptParams { session_id, prompt } =
+        serde_json::from_value(params.unwrap_or(Value::Null)).map_err(|_| ())?;
+
+    if prompt.len() == 0 {
+        return Err(());
+    }
+
+    let prompt = join_text_blocks(prompt).ok_or(())?;
+
+    Ok((session_id, prompt))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -151,6 +195,10 @@ impl ErrorResponse {
 
     fn method_not_found(id: Value) -> Self {
         Self::new(id, METHOD_NOT_FOUND_CODE, "Method not found")
+    }
+
+    fn resource_not_found(id: Value) -> Self {
+        Self::new(id, RESOURCE_NOT_FOUND_CODE, "Resource not found")
     }
 }
 
@@ -436,11 +484,13 @@ mod tests {
 
     use serde_json::Value;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex};
+    use uuid::Uuid;
 
     use crate::acp::{
         ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
-        METHOD_NOT_FOUND_CODE, MessageKind, Request, SessionId, classify_message, dispatch,
-        run_acp, validate_version, write_frame,
+        METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, Request, SessionId,
+        classify_message, dispatch, join_text_blocks, parse_prompt_params, run_acp,
+        validate_version, write_frame,
     };
 
     #[test]
@@ -1370,5 +1420,88 @@ mod tests {
             .await
             .expect("agent task should join")
             .expect("ACP transport should shutdown cleanly");
+    }
+
+    #[test]
+    fn join_text_blocks_joins_text_with_a_newline() {
+        let blocks = vec![
+            PromptContentBlock::Text {
+                text: "first".to_string(),
+            },
+            PromptContentBlock::Text {
+                text: "second".to_string(),
+            },
+        ];
+
+        let joined = join_text_blocks(blocks).expect("one joined text");
+        assert_eq!("first\nsecond".to_string(), joined);
+    }
+
+    #[test]
+    fn join_text_blocks_rejects_unsupported_blocks() {
+        let blocks = vec![
+            PromptContentBlock::Text {
+                text: "text".to_string(),
+            },
+            PromptContentBlock::Unsupported,
+        ];
+
+        let joined = join_text_blocks(blocks);
+        assert_eq!(None, joined);
+    }
+
+    #[test]
+    fn parse_prompt_params_when_the_structure_is_valid() {
+        let expected = "00000000-0000-0000-0000-000000000001";
+        let params = serde_json::json!({
+            "sessionId": &expected.to_string(),
+            "prompt": [
+                { "type": "text", "text": "Hello"}
+            ]
+        });
+
+        let (session_id, prompt) =
+            parse_prompt_params(Some(params)).expect("valid prompt params should parse");
+        assert_eq!(
+            session_id.0,
+            Uuid::parse_str(expected).expect("expected ID to be a valid UUID")
+        );
+
+        assert_eq!(prompt, "Hello");
+    }
+
+    #[test]
+    fn parse_prompt_params_rejects_unsupported_blocks() {
+        let expected = "00000000-0000-0000-0000-000000000001";
+        let params = serde_json::json!({
+            "sessionId": &expected.to_string(),
+            "prompt": [
+                { "type": "image" }
+            ]
+        });
+
+        parse_prompt_params(Some(params)).expect_err("unsupported blocks should not parse");
+    }
+
+    #[test]
+    fn parse_prompt_params_rejects_malformed_parameters() {
+        let params = serde_json::json!({
+            "prompt": [
+                { "type": "text", "text": "Hello" }
+            ]
+        });
+
+        parse_prompt_params(Some(params)).expect_err("malformed parameters should not parse");
+    }
+
+    #[test]
+    fn parse_prompt_params_rejects_empty_prompt_array() {
+        let expected = "00000000-0000-0000-0000-000000000001";
+        let params = serde_json::json!({
+            "sessionId": expected.to_string(),
+            "prompt": []
+        });
+
+        parse_prompt_params(Some(params)).expect_err("empty prompt arrays should not parse");
     }
 }

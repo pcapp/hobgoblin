@@ -27,8 +27,10 @@ This is coursework. I write the code, not you. For any change to this repo:
   avoid front-loading abstractions needed only by later tasks.
 - Assume beginner-level Rust knowledge: introduce one unfamiliar language
   feature at a time and explain what its syntax does where it first appears.
-- Give **step-by-step instructions** with file:line targets and the exact
-  snippet to type, plus a one-line **rationale** for each implementation step.
+- For implementation steps, default to a **short contract-first format**: name
+  the target, inputs, output, expected behavior, and one or two small examples.
+  Introduce only the unfamiliar concept needed for that step. Let me design and
+  type the implementation; provide exact code only if I ask or get stuck.
 - When test coverage is missing, state the gap and the behavior the test should
   prove, then let me write the test. Provide test code only if I ask or get stuck.
 - Include a way for me to **verify the diagnosis myself** before I change
