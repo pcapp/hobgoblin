@@ -504,6 +504,18 @@ async fn dispatch(
         };
 
         Ok(Some(serde_json::to_value(response)?))
+    } else if request.method == "session/prompt" {
+        let value = request.params.unwrap_or(Value::Null);
+        let _params = match parse_prompt_params(Some(value)) {
+            Ok(params) => params,
+            Err(_) => {
+                let response = ErrorResponse::invalid_params(request.id);
+
+                return Ok(Some(serde_json::to_value(response)?));
+            }
+        };
+
+        todo!()
     } else {
         let response = ErrorResponse::method_not_found(request.id);
         let response = serde_json::to_value(response)?;
@@ -839,6 +851,35 @@ mod tests {
             result.get("error").is_none(),
             "a success response must not contain an error"
         );
+    }
+
+    #[tokio::test]
+    async fn session_prompt_request_rejected_with_malformed_prompt_parameters() {
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        let value = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+              "sessionId": "00000000-0000-0000-0000-000000000001",
+              "prompt": []
+          }
+        });
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+
+        let result = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce an error response");
+
+        assert_eq!(result["id"], serde_json::json!(3));
+        assert!(
+            result.get("result").is_none(),
+            "an error response must not contain a result"
+        );
+        assert_eq!(result["error"]["code"], INVALID_PARAMS_CODE);
     }
 
     #[tokio::test]
