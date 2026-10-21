@@ -23,7 +23,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt wire parsing and six focused tests are complete; dispatch integration is next |
+| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt parsing and registry lookup coverage are complete; dispatch integration is next |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -538,6 +538,33 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The black-box ACP suite, Ruff checks, Clippy, and a Zed manual demo were not run for this partial Task 6 checkpoint.
 - `resource_link`, image, audio, and embedded-resource prompt content remain unsupported and must be revisited before claiming broad ACP v1 compatibility.
 
+## Session checkpoint — 2026-10-20 (Task 6 session lookup)
+
+### Current understanding
+
+- `Arc::clone` adds shared ownership of the same allocation; it does not clone the inner `Mutex<Session>` or `Session`.
+- A session lookup can clone the registry's `Arc` while holding the `RwLock` read guard, then return that independent handle so the guard is dropped before later asynchronous work.
+- `Arc::ptr_eq` proves that the returned and registered handles point to the same allocation, which is stronger than comparing one field of the session.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `1e653ac` with only `src/acp.rs` and this ledger changed for the checkpoint.
+- `src/acp.rs` has an async `get_session` helper plus focused existing-session and unknown-session tests.
+- The helper has a documented temporary dead-code allowance until the next dispatch step uses it.
+
+### Exact resume point
+
+1. Add the first `session/prompt` dispatch branch using `parse_prompt_params` and `get_session`.
+2. Return `-32602` for malformed prompt parameters and `-32002` for a valid but unknown session ID.
+3. Remove the temporary dead-code allowance from `get_session` once dispatch calls it.
+4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into a spawned task.
+
+### Unverified or deferred
+
+- Prompt lookup is not connected to dispatch and no ACP model turn runs yet.
+- The full Rust test suite, black-box ACP suite, Ruff checks, and Zed manual demo were not run for this small partial checkpoint.
+- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to later Task 6 increments.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -608,6 +635,17 @@ Commands: cargo fmt --check; cargo test
 Exit statuses: 0; 0
 Tests run: 54
 Tests passed: 54
+Checker report path: none
+```
+
+```text
+Date: 2026-10-20
+Task: 6 — Session lookup (partial checkpoint)
+Commit or tree state: master at 1e653ac; uncommitted lookup and progress-ledger changes
+Commands: cargo test get_session; cargo fmt --all -- --check; cargo clippy --locked --all-targets -- -D warnings
+Exit statuses: 0; 0; 0
+Tests run: 2
+Tests passed: 2
 Checker report path: none
 ```
 
