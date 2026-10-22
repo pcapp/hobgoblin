@@ -10,6 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use tokio::sync::{Mutex, RwLock, mpsc};
 use uuid::Uuid;
 
+use crate::agent::{Model, OpenRouterModel};
 use crate::session::Session;
 
 type AcpError = Box<dyn Error + Send + Sync>;
@@ -297,11 +298,16 @@ async fn write_frames<W: AsyncWrite + Unpin + Send>(
     Ok(())
 }
 
-async fn read_frames<R: AsyncBufRead + Unpin>(
+async fn read_frames<R, M>(
     mut reader: R,
     sender: mpsc::Sender<Value>,
     mut state: ConnectionState,
-) -> Result<(), AcpError> {
+    model: M,
+) -> Result<(), AcpError>
+where
+    R: AsyncBufRead + Unpin,
+    M: Model,
+{
     let mut input = String::new();
 
     loop {
@@ -338,7 +344,7 @@ async fn read_frames<R: AsyncBufRead + Unpin>(
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                if let Some(response) = dispatch(request, &mut state).await? {
+                if let Some(response) = dispatch(request, &mut state, &model).await? {
                     sender.send(response).await?;
                 }
             }
@@ -354,10 +360,20 @@ where
     R: AsyncBufRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    let model = OpenRouterModel::new();
+
+    run_acp_with_model(reader, writer, model).await
+}
+
+pub async fn run_acp_with_model<R, W, M>(reader: R, writer: W, model: M) -> Result<(), AcpError>
+where
+    R: AsyncBufRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+    M: Model + Send + Sync + 'static,
+{
     let (sender, receiver) = mpsc::channel(1);
     let state = ConnectionState::new();
-
-    let mut reader_task = tokio::spawn(read_frames(reader, sender, state));
+    let mut reader_task = tokio::spawn(read_frames(reader, sender, state, model));
     let mut writer_task = tokio::spawn(write_frames(writer, receiver));
 
     tokio::select! {
@@ -403,9 +419,10 @@ where
     Ok(())
 }
 
-async fn dispatch(
+async fn dispatch<M: Model>(
     request: Request<Value>,
     state: &mut ConnectionState,
+    _model: &M,
 ) -> Result<Option<Value>, AcpError> {
     if request.method == "initialize" {
         let params = request.params.unwrap_or(Value::Null);
@@ -478,7 +495,7 @@ async fn dispatch(
         Ok(Some(serde_json::to_value(response)?))
     } else if request.method == "session/prompt" {
         let value = request.params.unwrap_or(Value::Null);
-        let (session_id, _prompt) = match parse_prompt_params(Some(value)) {
+        let (session_id, prompt) = match parse_prompt_params(Some(value)) {
             Ok(params) => params,
             Err(_) => {
                 let response = ErrorResponse::invalid_params(request.id);
@@ -488,7 +505,11 @@ async fn dispatch(
         };
 
         return match get_session(&state.sessions, &session_id).await {
-            Some(_session) => todo!(),
+            Some(session) => {
+                let mut _session_guard = session.lock().await;
+
+                todo!()
+            }
             None => {
                 let response = ErrorResponse::resource_not_found(request.id);
 
@@ -513,6 +534,14 @@ mod tests {
     };
     use uuid::Uuid;
 
+    struct InertModel;
+
+    impl Model for InertModel {
+        async fn complete(&self, _request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+            panic!("Should not be called")
+        }
+    }
+
     use crate::{
         acp::{
             ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
@@ -520,6 +549,7 @@ mod tests {
             Request, SessionId, classify_message, dispatch, get_session, join_text_blocks,
             parse_prompt_params, run_acp, validate_version, write_frame,
         },
+        agent::Model,
         session::Session,
     };
 
@@ -600,8 +630,9 @@ mod tests {
         };
 
         let mut state = ConnectionState::new();
+        let model = InertModel;
 
-        let response = dispatch(request, &mut state)
+        let response = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -625,8 +656,9 @@ mod tests {
 
         let mut state = ConnectionState::new();
         state.initialized = true;
+        let model = InertModel;
 
-        let response = dispatch(request, &mut state)
+        let response = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -658,7 +690,9 @@ mod tests {
         let mut state = ConnectionState::new();
         state.initialized = true;
 
-        let response = dispatch(request, &mut state)
+        let model = InertModel;
+
+        let response = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -695,12 +729,14 @@ mod tests {
         let first_request = make_request(1, "/tmp/session_one".to_string());
         let second_request = make_request(2, "/tmp/session_two".to_string());
 
-        let first_response = dispatch(first_request, &mut state)
+        let model = InertModel;
+
+        let first_response = dispatch(first_request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
 
-        let second_response = dispatch(second_request, &mut state)
+        let second_response = dispatch(second_request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -767,8 +803,9 @@ mod tests {
 
         let mut state = ConnectionState::new();
         state.initialized = true;
+        let model = InertModel;
 
-        let response = dispatch(request, &mut state)
+        let response = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -847,8 +884,9 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = InertModel;
 
-        let result = dispatch(request, &mut state)
+        let result = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");
@@ -878,8 +916,9 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = InertModel;
 
-        let result = dispatch(request, &mut state)
+        let result = dispatch(request, &mut state, &model)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");

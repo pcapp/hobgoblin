@@ -593,6 +593,47 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The black-box ACP behavior suite and a Zed manual demo were not run for this partial checkpoint.
 - Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to the next Task 6 increments.
 
+## Session checkpoint — 2026-10-22 (Task 6 model injection started)
+
+### Current understanding
+
+- Same-session prompts will wait in Tokio mutex FIFO order, while prompts for different sessions may run concurrently. The registry lock must be released before waiting on the per-session mutex.
+- `Arc<Mutex<Session>>` represents genuine shared ownership across the registry and independently living prompt tasks; cloning the `Arc` does not clone the session.
+- Provider policy belongs behind the existing `Model` trait rather than in the ACP transport. A Tokio `OnceCell` can lazily construct one reusable OpenRouter client and coordinate concurrent first access.
+- ACP credentials will come only from the inherited process environment or a `.env` file for M6. Missing credentials must eventually become an actionable JSON-RPC prompt error, not terminate the process. Keychain-backed login is deferred.
+- A generic model path uses static dispatch. Because the reader future is spawned, its owned model requires `Send + Sync + 'static`: `Send` permits moving ownership between worker threads, `Sync` permits `&M` to cross thread boundaries, and `'static` forbids short-lived borrowed data.
+
+### Working Task 6 decisions
+
+- A second prompt for a busy session waits for the session mutex rather than receiving a busy error.
+- Load `.env` for every frontend, but do not inspect or require provider credentials during ACP startup.
+- Keep `run_acp(reader, writer)` as the production wrapper and use an internal generic `run_acp_with_model(reader, writer, model)` seam for scripted-model tests.
+- Retry lazy provider initialization after failures by leaving the `OnceCell` empty; cache only a successfully constructed client.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `4024962` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and this ledger.
+- `src/main.rs` now loads `.env` before choosing ACP or terminal mode, while eager terminal provider validation remains after the ACP early return.
+- `src/agent.rs` defines crate-visible `OpenRouterModel`, backed by `OnceCell<Client<OpenAIConfig>>`; its first `complete` call reads OpenRouter configuration, returns an actionable `std::io::Error` for a missing key, and caches only successful client construction.
+- `src/acp.rs` has a production `run_acp` wrapper, generic `run_acp_with_model`, and generic model propagation through `read_frames` and `dispatch`. The existing-session prompt arm acquires its per-session mutex and still ends at `todo!()`.
+- The ACP test module defines an inert `Model` that panics if called, and all eight direct dispatch tests pass it through the new generic dependency.
+- `cargo fmt --check`, `cargo test --locked --no-run`, and all 58 Rust tests pass with only the expected unused-`prompt` warning.
+
+### Exact resume point
+
+1. Connect the existing-session branch to the first synchronous `agent::turn` using the injected model and parsed prompt.
+2. Convert model and configuration failures into correlated JSON-RPC errors rather than terminating the reader.
+3. Add focused scripted-model coverage for the successful synchronous prompt path.
+4. Only after that path works should prompt execution move into its own spawned task so the ACP reader remains responsive.
+
+### Unverified or deferred
+
+- The black-box ACP suite, Ruff checks, Clippy, and Zed demo were not run for this partial checkpoint.
+- No successful ACP model turn, `session/update`, final `stopReason`, or spawned prompt task exists yet.
+- The missing-key error is produced by the lazy model but is not yet converted into a JSON-RPC response.
+- Same-session FIFO waiting is selected and the mutex is acquired, but no acceptance test yet demonstrates queued turn ordering.
+- Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -685,6 +726,17 @@ Commands: cargo test session_prompt_request; cargo fmt --check; cargo clippy --a
 Exit statuses: 0; 0; 0; 0; 0
 Tests run: 2 focused; 58 full-suite
 Tests passed: 2 focused; 58 full-suite
+Checker report path: none
+```
+
+```text
+Date: 2026-10-22
+Task: 6 — Model injection and test seam (partial checkpoint)
+Commit or tree state: master started at 4024962; uncommitted model-injection, test-seam, and progress-ledger changes
+Commands: cargo fmt --check; cargo test --locked --no-run; cargo test --locked
+Exit statuses: 0; 0; 0
+Tests run: 58
+Tests passed: 58
 Checker report path: none
 ```
 

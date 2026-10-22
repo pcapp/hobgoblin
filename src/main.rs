@@ -37,6 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
+    dotenvy::dotenv().ok();
+
     let args = Args::parse();
 
     if args.acp {
@@ -47,8 +49,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await
             .map_err(|error| -> Box<dyn std::error::Error> { error });
     }
-
-    dotenvy::dotenv().ok();
 
     let base_url = env::var("OPENROUTER_BASE_URL")
         .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::env;
 
 use crate::session::Session;
 use crate::skills::Skill;
@@ -7,6 +8,7 @@ use crate::wire::ChatResponse;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
 use serde_json::{Value, json};
+use tokio::sync::OnceCell;
 
 #[derive(Debug, Default)]
 pub struct Conversation {
@@ -20,6 +22,44 @@ pub(crate) trait Model {
 impl Model for Client<OpenAIConfig> {
     async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
         Ok(self.chat().create_byot(request).await?)
+    }
+}
+
+pub(crate) struct OpenRouterModel {
+    client: OnceCell<Client<OpenAIConfig>>,
+}
+
+impl OpenRouterModel {
+    pub(crate) fn new() -> Self {
+        Self {
+            client: OnceCell::new(),
+        }
+    }
+}
+
+impl Model for OpenRouterModel {
+    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+        let client = self
+            .client
+            .get_or_try_init(|| async {
+                let base_url = env::var("OPENROUTER_BASE_URL")
+                    .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
+
+                let api_key = env::var("OPENROUTER_API_KEY").map_err(|_| {
+                    std::io::Error::other(
+                        "OPENROUTER_API_KEY is not set. Configure it in the process environment or a .env file, then restart the agent server."
+                    )
+                })?;
+
+                let config = OpenAIConfig::new()
+                    .with_api_base(base_url)
+                    .with_api_key(api_key);
+
+                Ok::<_, std::io::Error>(Client::with_config(config))
+            })
+            .await?;
+
+        Ok(client.chat().create_byot(request).await?)
     }
 }
 
