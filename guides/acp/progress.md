@@ -634,6 +634,37 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Same-session FIFO waiting is selected and the mutex is acquired, but no acceptance test yet demonstrates queued turn ordering.
 - Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
 
+## Session checkpoint — 2026-10-22 (Task 6 synchronous prompt turn)
+
+### Current understanding
+
+- A Tokio mutex guard implements `DerefMut`, so a mutable borrow of the guard can satisfy `agent::turn`'s `&mut Session` input while keeping the session locked for the whole awaited turn.
+- Native `async fn` in a trait does not by itself promise a `Send` future. Expressing `Model::complete` as return-position `impl Future<Output = ...> + Send` makes that contract explicit and lets the compiler verify each existing async implementation.
+- Provider response vocabulary such as `choices` belongs behind the agent-core boundary. `agent::turn` extracts the assistant message into session history; the ACP prompt response exposes only ACP fields such as `stopReason`.
+- Model failures must be converted into correlated JSON-RPC responses inside dispatch rather than escape as transport errors and terminate the reader.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `8812ff4` with changes in `src/acp.rs`, `src/agent.rs`, and this ledger.
+- `Model::complete` now guarantees that its returned future is `Send`; all existing model implementations satisfy that stronger contract.
+- The existing-session prompt branch synchronously runs `agent::turn` while holding the per-session mutex, returns `stopReason: "end_turn"` on success, and maps model failures to JSON-RPC `-32603` responses.
+- A focused scripted-model test proves that the ACP prompt and extracted assistant response are retained in the same session conversation while provider-specific `choices` data does not leak into the ACP response.
+- `./premerge.sh` passes, including Rust formatting, Ruff checks, Clippy with warnings denied, and all 59 Rust tests.
+
+### Exact resume point
+
+1. Add focused coverage proving a failing model produces a correlated `-32603` JSON-RPC response without returning an ACP transport error.
+2. Decide how prompt dispatch will emit both an `agent_message_chunk` update and the final correlated response through the writer channel.
+3. Use the currently bound answer to send the update before the final `stopReason: "end_turn"` response.
+4. Only after update-before-response works synchronously should prompt execution move into its own spawned task so the reader remains responsive.
+
+### Unverified or deferred
+
+- The model-failure response branch does not yet have focused coverage.
+- No `session/update`, spawned prompt task, reader-responsiveness test, same-session FIFO acceptance test, or Zed demo exists yet.
+- The black-box ACP suite has not yet exercised `session/prompt`; the current pre-merge ACP checks cover Python formatting and linting only.
+- Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -737,6 +768,17 @@ Commands: cargo fmt --check; cargo test --locked --no-run; cargo test --locked
 Exit statuses: 0; 0; 0
 Tests run: 58
 Tests passed: 58
+Checker report path: none
+```
+
+```text
+Date: 2026-10-22
+Task: 6 — Synchronous prompt turn (partial checkpoint)
+Commit or tree state: master started at 8812ff4; uncommitted synchronous-turn, Send-contract, test, and progress-ledger changes
+Commands: ./premerge.sh
+Exit statuses: 0
+Tests run: 59
+Tests passed: 59
 Checker report path: none
 ```
 

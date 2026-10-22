@@ -10,7 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWr
 use tokio::sync::{Mutex, RwLock, mpsc};
 use uuid::Uuid;
 
-use crate::agent::{Model, OpenRouterModel};
+use crate::agent::{self, Model, OpenRouterModel};
 use crate::session::Session;
 
 type AcpError = Box<dyn Error + Send + Sync>;
@@ -37,6 +37,7 @@ const INVALID_PARAMS_CODE: i32 = -32602;
 const METHOD_NOT_FOUND_CODE: i32 = -32601;
 const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
 const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
+const INTERNAL_ERROR_CODE: i32 = -32603;
 
 struct ConnectionState {
     initialized: bool,
@@ -422,7 +423,7 @@ where
 async fn dispatch<M: Model>(
     request: Request<Value>,
     state: &mut ConnectionState,
-    _model: &M,
+    model: &M,
 ) -> Result<Option<Value>, AcpError> {
     if request.method == "initialize" {
         let params = request.params.unwrap_or(Value::Null);
@@ -506,9 +507,28 @@ async fn dispatch<M: Model>(
 
         return match get_session(&state.sessions, &session_id).await {
             Some(session) => {
-                let mut _session_guard = session.lock().await;
+                let mut session_guard = session.lock().await;
 
-                todo!()
+                let _answer = match agent::turn(model, &mut session_guard, &prompt).await {
+                    Ok(answer) => answer,
+                    Err(error) => {
+                        let message = format!("Request {} failed: {error}", request.id);
+
+                        let response =
+                            ErrorResponse::new(request.id, INTERNAL_ERROR_CODE, &message);
+                        return Ok(Some(serde_json::to_value(response)?));
+                    }
+                };
+
+                let response = SuccessResponse {
+                    jsonrpc: String::from("2.0"),
+                    id: request.id,
+                    result: serde_json::json!({
+                        "stopReason": "end_turn"
+                    }),
+                };
+
+                Ok(Some(serde_json::to_value(response)?))
             }
             None => {
                 let response = ErrorResponse::resource_not_found(request.id);
@@ -929,6 +949,81 @@ mod tests {
             "an error response must not contain a result"
         );
         assert_eq!(result["error"]["code"], RESOURCE_NOT_FOUND_CODE);
+    }
+
+    #[tokio::test]
+    async fn session_prompt_runs_model_and_retains_conversation() {
+        struct ScriptedModel;
+        impl Model for ScriptedModel {
+            async fn complete(&self, _request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+                Ok(serde_json::json!({
+
+                      "choices": [{
+                        "message": {
+                          "role": "assistant",
+                          "content": "scripted answer",
+                          "tool_calls": null
+                        }
+                      }]
+
+                }))
+            }
+        }
+
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let session = Arc::new(Mutex::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
+            let session_id = SessionId(uuid);
+
+            registry.insert(session_id, Arc::clone(&session));
+        }
+        state.initialized = true;
+
+        let value = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+              "sessionId": "00000000-0000-0000-0000-000000000001",
+              "prompt": [
+                  { "type": "text", "text": "What is 1+1?"}
+              ]
+          }
+        });
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = ScriptedModel;
+
+        let result = dispatch(request, &mut state, &model)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should succeed");
+
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], serde_json::json!(3));
+        assert!(
+            result.get("error").is_none(),
+            "a result response must not contain an error"
+        );
+        assert_eq!(result["result"]["stopReason"], "end_turn");
+
+        let session_guard = session.lock().await;
+        assert_eq!(session_guard.conversation.messages.len(), 2);
+
+        assert_eq!(session_guard.conversation.messages[0]["role"], "user");
+        assert_eq!(
+            session_guard.conversation.messages[0]["content"],
+            "What is 1+1?"
+        );
+
+        assert_eq!(session_guard.conversation.messages[1]["role"], "assistant");
+        assert_eq!(
+            session_guard.conversation.messages[1]["content"],
+            "scripted answer"
+        );
     }
 
     #[tokio::test]

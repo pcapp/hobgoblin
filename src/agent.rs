@@ -16,7 +16,10 @@ pub struct Conversation {
 }
 
 pub(crate) trait Model {
-    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>>;
+    fn complete(
+        &self,
+        request: Value,
+    ) -> impl std::future::Future<Output = Result<Value, Box<dyn std::error::Error>>> + Send;
 }
 
 impl Model for Client<OpenAIConfig> {
