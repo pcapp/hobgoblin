@@ -27,10 +27,6 @@ impl SessionId {
 type SessionHandle = Arc<Mutex<Session>>;
 type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
 
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 async fn get_session(registry: &SessionRegistry, session_id: &SessionId) -> Option<SessionHandle> {
     let guard = registry.read().await;
     guard.get(session_id).cloned()
@@ -39,10 +35,6 @@ async fn get_session(registry: &SessionRegistry, session_id: &SessionId) -> Opti
 const INVALID_PARAMS_CODE: i32 = -32602;
 const METHOD_NOT_FOUND_CODE: i32 = -32601;
 const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
 
 struct ConnectionState {
@@ -96,10 +88,6 @@ struct NewSessionParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 struct PromptParams {
     session_id: SessionId,
     prompt: Vec<PromptContentBlock>,
@@ -107,10 +95,6 @@ struct PromptParams {
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 enum PromptContentBlock {
     Text {
         text: String,
@@ -119,10 +103,6 @@ enum PromptContentBlock {
     Unsupported,
 }
 
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 fn join_text_blocks(blocks: Vec<PromptContentBlock>) -> Option<String> {
     let mut text_blocks = Vec::new();
 
@@ -136,10 +116,6 @@ fn join_text_blocks(blocks: Vec<PromptContentBlock>) -> Option<String> {
     Some(text_blocks.join("\n"))
 }
 
-#[allow(
-    dead_code,
-    reason = "used by staged Task 6 session/prompt dispatch work"
-)]
 fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), ()> {
     let PromptParams { session_id, prompt } =
         serde_json::from_value(params.unwrap_or(Value::Null)).map_err(|_| ())?;
@@ -226,10 +202,6 @@ impl ErrorResponse {
         Self::new(id, METHOD_NOT_FOUND_CODE, "Method not found")
     }
 
-    #[allow(
-        dead_code,
-        reason = "used by staged Task 6 session/prompt dispatch work"
-    )]
     fn resource_not_found(id: Value) -> Self {
         Self::new(id, RESOURCE_NOT_FOUND_CODE, "Resource not found")
     }
@@ -506,7 +478,7 @@ async fn dispatch(
         Ok(Some(serde_json::to_value(response)?))
     } else if request.method == "session/prompt" {
         let value = request.params.unwrap_or(Value::Null);
-        let _params = match parse_prompt_params(Some(value)) {
+        let (session_id, _prompt) = match parse_prompt_params(Some(value)) {
             Ok(params) => params,
             Err(_) => {
                 let response = ErrorResponse::invalid_params(request.id);
@@ -515,7 +487,14 @@ async fn dispatch(
             }
         };
 
-        todo!()
+        return match get_session(&state.sessions, &session_id).await {
+            Some(_session) => todo!(),
+            None => {
+                let response = ErrorResponse::resource_not_found(request.id);
+
+                Ok(Some(serde_json::to_value(response)?))
+            }
+        };
     } else {
         let response = ErrorResponse::method_not_found(request.id);
         let response = serde_json::to_value(response)?;
@@ -537,9 +516,9 @@ mod tests {
     use crate::{
         acp::{
             ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
-            METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, Request, SessionId,
-            classify_message, dispatch, get_session, join_text_blocks, parse_prompt_params,
-            run_acp, validate_version, write_frame,
+            METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, RESOURCE_NOT_FOUND_CODE,
+            Request, SessionId, classify_message, dispatch, get_session, join_text_blocks,
+            parse_prompt_params, run_acp, validate_version, write_frame,
         },
         session::Session,
     };
@@ -880,6 +859,37 @@ mod tests {
             "an error response must not contain a result"
         );
         assert_eq!(result["error"]["code"], INVALID_PARAMS_CODE);
+    }
+
+    #[tokio::test]
+    async fn session_prompt_request_rejected_with_missing_session() {
+        let mut state = ConnectionState::new();
+        state.initialized = true;
+
+        let value = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+              "sessionId": "00000000-0000-0000-0000-000000000001",
+              "prompt": [
+                  { "type": "text", "text": "What is 1+1?"}
+              ]
+          }
+        });
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+
+        let result = dispatch(request, &mut state)
+            .await
+            .expect("dispatch should succeed")
+            .expect("request should produce an error response");
+
+        assert_eq!(result["id"], serde_json::json!(3));
+        assert!(
+            result.get("result").is_none(),
+            "an error response must not contain a result"
+        );
+        assert_eq!(result["error"]["code"], RESOURCE_NOT_FOUND_CODE);
     }
 
     #[tokio::test]

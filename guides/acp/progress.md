@@ -565,6 +565,34 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The full Rust test suite, black-box ACP suite, Ruff checks, and Zed manual demo were not run for this small partial checkpoint.
 - Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to later Task 6 increments.
 
+## Session checkpoint — 2026-10-21 (Task 6 dispatch errors)
+
+### Current understanding
+
+- Serde validates the prompt's wire shape, while `parse_prompt_params` also enforces frontend policy such as rejecting an empty prompt array and unsupported content blocks.
+- Prompt dispatch validates parameters before looking up the session, so malformed input returns `-32602` and a valid request naming an unknown session returns `-32002`.
+- A Rust `match` is an expression; each arm can produce the branch's `Result`, avoiding a separate mutable result or duplicated serialization path.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `de96a12` with `src/acp.rs` and this ledger changed for the checkpoint.
+- The `session/prompt` dispatch branch now calls `parse_prompt_params` and `get_session`.
+- Focused dispatch tests cover malformed prompt parameters and a valid prompt for an unknown session.
+- A valid prompt for an existing session deliberately reaches `todo!()`; model execution has not been connected yet.
+
+### Exact resume point
+
+1. Continue from the existing-session arm of the `session/prompt` dispatch branch.
+2. Decide how a prompt turn gets exclusive access to its session and what a second prompt for the same busy session should do.
+3. Connect the first successful model turn, then move it into a spawned task so the ACP reader remains responsive.
+4. Address model configuration and `Send` compiler errors only as that successful path requires them.
+
+### Unverified or deferred
+
+- No ACP model turn, `session/update`, final `stopReason`, or spawned prompt task exists yet.
+- The black-box ACP behavior suite and a Zed manual demo were not run for this partial checkpoint.
+- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to the next Task 6 increments.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -646,6 +674,17 @@ Commands: cargo test get_session; cargo fmt --all -- --check; cargo clippy --loc
 Exit statuses: 0; 0; 0
 Tests run: 2
 Tests passed: 2
+Checker report path: none
+```
+
+```text
+Date: 2026-10-21
+Task: 6 — Prompt dispatch errors (partial checkpoint)
+Commit or tree state: master at de96a12; uncommitted dispatch and progress-ledger changes
+Commands: cargo test session_prompt_request; cargo fmt --check; cargo clippy --all-targets --all-features -- -D warnings; cargo test; ./premerge.sh
+Exit statuses: 0; 0; 0; 0; 0
+Tests run: 2 focused; 58 full-suite
+Tests passed: 2 focused; 58 full-suite
 Checker report path: none
 ```
 
