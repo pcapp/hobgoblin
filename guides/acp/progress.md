@@ -23,7 +23,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt parsing and registry lookup coverage are complete; dispatch integration is next |
+| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Synchronous model turn and `agent_message_chunk` update are complete; spawning prompt work is next |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -665,6 +665,68 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The black-box ACP suite has not yet exercised `session/prompt`; the current pre-merge ACP checks cover Python formatting and linting only.
 - Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
 
+## Session checkpoint — 2026-10-22 (Task 6 session wrap-up)
+
+### Current understanding
+
+- The remaining blocker for a basic Zed demo is not model execution: the model answer is currently bound as `_answer` and discarded, so Zed receives `end_turn` without an `agent_message_chunk` to render.
+- A spawned prompt future must own `'static` values rather than borrow locals from `read_frames`. The task will need an owned session handle, prompt, session ID, request ID, cloned writer sender, and shared model handle.
+- `Arc<M>` is the intended shared model ownership: `run_acp_with_model` wraps the model once, and prompt tasks clone the `Arc` without cloning the model or its lazy `OnceCell` client.
+- To keep the reader responsive, the spawned prompt task must send both the update and final response itself; returning the final response from a waited-on dispatch path would still block the reader.
+- The synchronous minimum ACP sequence is one `session/update` notification containing `agent_message_chunk`, followed by the correlated `session/prompt` response containing `stopReason: "end_turn"`.
+
+### Source checkpoint
+
+- Commit `fa9d8d9` (`Run synchronous ACP prompt turns`) is pushed to `origin/master`; the source tree was clean before this ledger wrap-up.
+- The synchronous prompt path and its scripted-model conversation test are complete, and `./premerge.sh` passes all 59 Rust tests plus formatting, Ruff, and Clippy checks.
+- No source code changed after the pushed checkpoint; only the next ownership and task shape were selected.
+
+### Exact resume point
+
+1. Change model propagation from owned `M` to shared `Arc<M>` across `run_acp_with_model`, `read_frames`, and `dispatch` while leaving prompt execution synchronous.
+2. Run `cargo check --locked` and `cargo test --locked` before introducing a nested task.
+3. Give prompt handling a cloned writer sender, move its owned values into `tokio::spawn`, and have that task send `agent_message_chunk` before the final `end_turn` response.
+4. Add a duplex scripted-model test proving update-before-response ordering, then build and configure the custom agent in Zed.
+
+### Unverified or deferred
+
+- The existing model-failure response branch still lacks focused coverage.
+- The `Arc<M>` propagation and nested prompt task have not been implemented or compiler-checked.
+- No `session/update`, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo exists yet.
+- Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
+
+## Session checkpoint — 2026-10-23 (Task 6 synchronous update)
+
+### Current understanding
+
+- Borrowing an `Arc<T>` or calling `Arc::as_ref` does not change its strong count; only cloning or dropping an owning `Arc` changes that count.
+- Tokio tasks require an owned `Send + 'static` future because they may move between runtime worker threads. `Sync` is separately required when shared references may be used across threads.
+- The ACP layer owns the model-sharing policy. `agent::turn` continues to accept `&M`; it does not need to know that ACP stores the model in an `Arc<M>`.
+- A JSON-RPC notification needs `jsonrpc`, `method`, and `params`, but no `id`. The ACP answer update uses method `session/update` and update discriminator `agent_message_chunk`.
+- The reader task may perform the brief session-registry lookup before spawning; responsiveness requires avoiding the long model turn on the reader, not eliminating every short await.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `fa9d8d9` with changes in `src/acp.rs` and this ledger.
+- `read_frames` wraps the injected model once in `Arc<M>`, and `dispatch` borrows that shared owner while `agent::turn` receives `&M` through `Arc::as_ref`.
+- The writer sender is borrowed by `dispatch`. A successful synchronous prompt sends a valid `session/update` notification containing the answer before returning its correlated `end_turn` response.
+- The scripted-model test verifies the notification method, absence of an ID, session ID, update discriminator, text content type, answer, final response, and retained conversation.
+- `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 59 Rust tests.
+
+### Exact resume point
+
+1. In the successful prompt branch, clone the model `Arc` and writer sender and move those handles, the session handle, request ID, session ID, and prompt into `tokio::spawn`.
+2. Have the spawned task run `agent::turn`, then send both the `agent_message_chunk` notification and correlated success or error response; prompt dispatch should return `None` after spawning.
+3. Adjust the focused scripted-model test for asynchronous channel delivery, then add a duplex test proving update-before-response ordering.
+4. Add a reader-responsiveness test proving another request is handled while a prompt model call remains pending, then perform the Zed smoke test.
+
+### Unverified or deferred
+
+- Prompt execution is still synchronous, so the reader remains blocked during the model turn.
+- The existing model-failure response branch still lacks focused coverage.
+- No duplex prompt-ordering test, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo exists yet.
+- Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -779,6 +841,17 @@ Commands: ./premerge.sh
 Exit statuses: 0
 Tests run: 59
 Tests passed: 59
+Checker report path: none
+```
+
+```text
+Date: 2026-10-23
+Task: 6 — Synchronous ACP answer update (partial checkpoint)
+Commit or tree state: master at fa9d8d9; uncommitted Arc-model, session/update, test, and progress-ledger changes
+Commands: cargo test --locked session_prompt_runs_model_and_retains_conversation; cargo test --locked; ./premerge.sh
+Exit statuses: 0; 0; 0
+Tests run: 1 focused; 59 full-suite; 59 through premerge
+Tests passed: 1 focused; 59 full-suite; 59 through premerge
 Checker report path: none
 ```
 

@@ -310,6 +310,7 @@ where
     M: Model,
 {
     let mut input = String::new();
+    let model = Arc::new(model);
 
     loop {
         input.clear();
@@ -345,7 +346,8 @@ where
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
-                if let Some(response) = dispatch(request, &mut state, &model).await? {
+
+                if let Some(response) = dispatch(request, &mut state, &model, &sender).await? {
                     sender.send(response).await?;
                 }
             }
@@ -423,7 +425,8 @@ where
 async fn dispatch<M: Model>(
     request: Request<Value>,
     state: &mut ConnectionState,
-    model: &M,
+    model: &Arc<M>,
+    sender: &mpsc::Sender<Value>,
 ) -> Result<Option<Value>, AcpError> {
     if request.method == "initialize" {
         let params = request.params.unwrap_or(Value::Null);
@@ -509,7 +512,7 @@ async fn dispatch<M: Model>(
             Some(session) => {
                 let mut session_guard = session.lock().await;
 
-                let _answer = match agent::turn(model, &mut session_guard, &prompt).await {
+                let answer = match agent::turn(model.as_ref(), &mut session_guard, &prompt).await {
                     Ok(answer) => answer,
                     Err(error) => {
                         let message = format!("Request {} failed: {error}", request.id);
@@ -519,6 +522,23 @@ async fn dispatch<M: Model>(
                         return Ok(Some(serde_json::to_value(response)?));
                     }
                 };
+
+                let session_update = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "session/update",
+                    "params": {
+                        "sessionId": &session_id.0.to_string(),
+                        "update": {
+                            "content": {
+                                "type": "text",
+                                "text": answer
+                            },
+                            "sessionUpdate": "agent_message_chunk",
+                        }
+                    }
+                });
+
+                sender.send(session_update).await?;
 
                 let response = SuccessResponse {
                     jsonrpc: String::from("2.0"),
@@ -550,7 +570,7 @@ mod tests {
     use serde_json::Value;
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex},
-        sync::{Mutex, RwLock},
+        sync::{Mutex, RwLock, mpsc},
     };
     use uuid::Uuid;
 
@@ -650,9 +670,10 @@ mod tests {
         };
 
         let mut state = ConnectionState::new();
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model)
+        let response = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -676,9 +697,10 @@ mod tests {
 
         let mut state = ConnectionState::new();
         state.initialized = true;
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model)
+        let response = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -710,9 +732,10 @@ mod tests {
         let mut state = ConnectionState::new();
         state.initialized = true;
 
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model)
+        let response = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -749,14 +772,15 @@ mod tests {
         let first_request = make_request(1, "/tmp/session_one".to_string());
         let second_request = make_request(2, "/tmp/session_two".to_string());
 
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _) = mpsc::channel(2);
 
-        let first_response = dispatch(first_request, &mut state, &model)
+        let first_response = dispatch(first_request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
 
-        let second_response = dispatch(second_request, &mut state, &model)
+        let second_response = dispatch(second_request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -823,9 +847,10 @@ mod tests {
 
         let mut state = ConnectionState::new();
         state.initialized = true;
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model)
+        let response = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -904,9 +929,10 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model)
+        let result = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");
@@ -936,9 +962,10 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
-        let model = InertModel;
+        let model = Arc::new(InertModel);
+        let (sender, _receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model)
+        let result = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");
@@ -957,7 +984,6 @@ mod tests {
         impl Model for ScriptedModel {
             async fn complete(&self, _request: Value) -> Result<Value, Box<dyn std::error::Error>> {
                 Ok(serde_json::json!({
-
                       "choices": [{
                         "message": {
                           "role": "assistant",
@@ -995,12 +1021,35 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
-        let model = ScriptedModel;
+        let model = Arc::new(ScriptedModel);
+        let (sender, mut receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model)
+        let result = dispatch(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should succeed");
+
+        let update = receiver
+            .recv()
+            .await
+            .expect("to receive an agent_updated_message");
+
+        assert_eq!(update["jsonrpc"], "2.0");
+        assert_eq!(update["method"], "session/update");
+        assert!(update.get("id").is_none());
+        assert_eq!(
+            update["params"]["update"]["sessionUpdate"],
+            "agent_message_chunk"
+        );
+        assert_eq!(update["params"]["update"]["content"]["type"], "text");
+        assert_eq!(
+            update["params"]["sessionId"],
+            "00000000-0000-0000-0000-000000000001"
+        );
+        assert_eq!(
+            update["params"]["update"]["content"]["text"],
+            "scripted answer"
+        );
 
         assert_eq!(result["jsonrpc"], "2.0");
         assert_eq!(result["id"], serde_json::json!(3));
