@@ -28,7 +28,7 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt()
         .json()
         .with_writer(std::io::stderr)
@@ -45,9 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let reader = tokio::io::BufReader::new(tokio::io::stdin());
         let writer = tokio::io::stdout();
 
-        return acp::run_acp(reader, writer)
-            .await
-            .map_err(|error| -> Box<dyn std::error::Error> { error });
+        return acp::run_acp(reader, writer).await;
     }
 
     let base_url = env::var("OPENROUTER_BASE_URL")

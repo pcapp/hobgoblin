@@ -23,7 +23,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Synchronous model turn and `agent_message_chunk` update are complete; spawning prompt work is next |
+| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt work runs in a spawned task and sends update then response; reader-responsiveness coverage is next |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -727,6 +727,41 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - No duplex prompt-ordering test, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo exists yet.
 - Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
 
+## Session checkpoint — 2026-10-23 (Task 6 spawned prompt task)
+
+### Current understanding
+
+- `tokio::spawn` creates a task, not an OS thread. On the multithreaded runtime, the task may move between worker threads, so its future and output must be `Send + 'static`.
+- `Sync` is not inherently required for a task's error output; it is required for the model because cloned `Arc<M>` handles let tasks access shared `&M` values across threads.
+- An async block's `Result` error type can be fixed by ending it with `Ok::<(), AcpError>(())`. Protocol responses must be sent through the writer channel rather than returned into an unobserved `JoinHandle`.
+- A model failure is handled once it is converted to a correlated JSON-RPC error and sent. Serialization or channel failures remain task-level `AcpError`s.
+- The session mutex must be acquired inside the spawned task. Moving a guard borrowed from `dispatch` would violate `'static` and could block the reader before the task was spawned.
+
+### Source checkpoint
+
+- Branch `master` started this checkpoint at `b108596` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and `src/terminal.rs`.
+- Successful prompt dispatch clones owned model and writer handles, moves all prompt values into `tokio::spawn`, and immediately returns `None` to the reader.
+- The prompt task acquires the per-session lock, runs `agent::turn`, sends `agent_message_chunk`, and then sends the correlated `end_turn` response. Model failures are sent as correlated `-32603` responses.
+- Model and application error contracts now use `Box<dyn Error + Send + Sync>`, and the model bounds propagate `Send + Sync + 'static` through the reader and dispatch boundaries.
+- The focused scripted-model test expects `Ok(None)`, receives both channel messages, verifies update-before-response ordering, and still verifies retained conversation state.
+- A manual Zed smoke test succeeded on the preceding synchronous-update checkpoint: Zed launched Hobgoblin, created a session, rendered the model answer, and completed the turn. The newly spawned version has not yet been manually retested in Zed.
+- `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 59 Rust tests.
+
+### Exact resume point
+
+1. Add a controllable scripted model whose `complete` method signals that it started, then waits for a separate release signal before returning its canned answer.
+2. Drive initialize and `session/new` over `tokio::io::duplex`, send `session/prompt`, and wait for the model-start signal without releasing it.
+3. While the prompt is pending, send a second short request such as another `session/new`; assert its correlated response arrives before releasing the model.
+4. Release the model, then assert the original prompt's `session/update` arrives before its final response. Retest the spawned version manually in Zed afterward.
+
+### Unverified or deferred
+
+- No duplex reader-responsiveness test or full transport-level prompt-ordering test exists yet.
+- The spawned version has not yet been manually smoke-tested in Zed.
+- Same-session FIFO behavior and the black-box ACP prompt case remain uncovered.
+- Spawned task failures after the writer channel closes are not supervised because the `JoinHandle` is detached.
+- Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -850,6 +885,17 @@ Task: 6 — Synchronous ACP answer update (partial checkpoint)
 Commit or tree state: master at fa9d8d9; uncommitted Arc-model, session/update, test, and progress-ledger changes
 Commands: cargo test --locked session_prompt_runs_model_and_retains_conversation; cargo test --locked; ./premerge.sh
 Exit statuses: 0; 0; 0
+Tests run: 1 focused; 59 full-suite; 59 through premerge
+Tests passed: 1 focused; 59 full-suite; 59 through premerge
+Checker report path: none
+```
+
+```text
+Date: 2026-10-23
+Task: 6 — Spawned prompt task (partial checkpoint)
+Commit or tree state: master at b108596; uncommitted spawned-task, Send/error-contract, test, and progress-ledger changes
+Commands: cargo check --locked; cargo test --locked session_prompt_runs_model_and_retains_conversation; cargo test --locked; ./premerge.sh
+Exit statuses: 0; 0; 0; 0
 Tests run: 1 focused; 59 full-suite; 59 through premerge
 Tests passed: 1 focused; 59 full-suite; 59 through premerge
 Checker report path: none

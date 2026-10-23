@@ -11,7 +11,7 @@ pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     skill_loader: &L,
     output: &mut W,
     prompt: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cwd = std::env::current_dir()?;
     let mut conversation = Session::new(cwd, skill_loader)?;
 
@@ -27,7 +27,7 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
     skill_loader: &L,
     reader: &mut R,
     writer: &mut W,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cwd = std::env::current_dir()?;
     let mut conversation = Session::new(cwd, skill_loader)?;
 
@@ -87,7 +87,10 @@ mod tests {
     }
 
     impl agent::Model for ScriptedModel {
-        async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+        async fn complete(
+            &self,
+            request: Value,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             self.requests.lock().unwrap().push(request);
             Ok(self.response.clone())
         }

@@ -19,11 +19,14 @@ pub(crate) trait Model {
     fn complete(
         &self,
         request: Value,
-    ) -> impl std::future::Future<Output = Result<Value, Box<dyn std::error::Error>>> + Send;
+    ) -> impl std::future::Future<Output = Result<Value, Box<dyn std::error::Error + Send + Sync>>> + Send;
 }
 
 impl Model for Client<OpenAIConfig> {
-    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+    async fn complete(
+        &self,
+        request: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         Ok(self.chat().create_byot(request).await?)
     }
 }
@@ -41,7 +44,10 @@ impl OpenRouterModel {
 }
 
 impl Model for OpenRouterModel {
-    async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+    async fn complete(
+        &self,
+        request: Value,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         let client = self
             .client
             .get_or_try_init(|| async {
@@ -85,7 +91,7 @@ pub async fn turn<M: Model>(
     client: &M,
     session: &mut Session,
     prompt: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let tools = specs();
 
     let expanded_prompt = expand_skill_prompt(prompt, &session.skills_by_name);
@@ -185,7 +191,10 @@ mod tests {
     }
 
     impl Model for ScriptedModel {
-        async fn complete(&self, request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+        async fn complete(
+            &self,
+            request: Value,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             self.requests.lock().unwrap().push(request);
 
             self.responses

@@ -307,7 +307,7 @@ async fn read_frames<R, M>(
 ) -> Result<(), AcpError>
 where
     R: AsyncBufRead + Unpin,
-    M: Model,
+    M: Model + Send + Sync + 'static,
 {
     let mut input = String::new();
     let model = Arc::new(model);
@@ -422,7 +422,7 @@ where
     Ok(())
 }
 
-async fn dispatch<M: Model>(
+async fn dispatch<M: Model + Send + Sync + 'static>(
     request: Request<Value>,
     state: &mut ConnectionState,
     model: &Arc<M>,
@@ -510,45 +510,57 @@ async fn dispatch<M: Model>(
 
         return match get_session(&state.sessions, &session_id).await {
             Some(session) => {
-                let mut session_guard = session.lock().await;
+                let model = model.clone();
+                let sender = sender.clone();
 
-                let answer = match agent::turn(model.as_ref(), &mut session_guard, &prompt).await {
-                    Ok(answer) => answer,
-                    Err(error) => {
-                        let message = format!("Request {} failed: {error}", request.id);
+                tokio::spawn(async move {
+                    let mut session_guard = session.lock().await;
 
-                        let response =
-                            ErrorResponse::new(request.id, INTERNAL_ERROR_CODE, &message);
-                        return Ok(Some(serde_json::to_value(response)?));
-                    }
-                };
+                    let answer =
+                        match agent::turn(model.as_ref(), &mut session_guard, &prompt).await {
+                            Ok(answer) => answer,
+                            Err(error) => {
+                                let message = format!("Request {} failed: {error}", request.id);
 
-                let session_update = serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "method": "session/update",
-                    "params": {
-                        "sessionId": &session_id.0.to_string(),
-                        "update": {
-                            "content": {
-                                "type": "text",
-                                "text": answer
-                            },
-                            "sessionUpdate": "agent_message_chunk",
+                                let response =
+                                    ErrorResponse::new(request.id, INTERNAL_ERROR_CODE, &message);
+                                sender.send(serde_json::to_value(response)?).await?;
+
+                                return Ok(());
+                            }
+                        };
+
+                    let session_update = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": {
+                            "sessionId": &session_id.0.to_string(),
+                            "update": {
+                                "content": {
+                                    "type": "text",
+                                    "text": answer
+                                },
+                                "sessionUpdate": "agent_message_chunk",
+                            }
                         }
-                    }
+                    });
+
+                    sender.send(session_update).await?;
+
+                    let response = SuccessResponse {
+                        jsonrpc: String::from("2.0"),
+                        id: request.id,
+                        result: serde_json::json!({
+                            "stopReason": "end_turn"
+                        }),
+                    };
+
+                    sender.send(serde_json::to_value(response)?).await?;
+
+                    Ok::<(), AcpError>(())
                 });
 
-                sender.send(session_update).await?;
-
-                let response = SuccessResponse {
-                    jsonrpc: String::from("2.0"),
-                    id: request.id,
-                    result: serde_json::json!({
-                        "stopReason": "end_turn"
-                    }),
-                };
-
-                Ok(Some(serde_json::to_value(response)?))
+                Ok(None)
             }
             None => {
                 let response = ErrorResponse::resource_not_found(request.id);
@@ -577,7 +589,10 @@ mod tests {
     struct InertModel;
 
     impl Model for InertModel {
-        async fn complete(&self, _request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+        async fn complete(
+            &self,
+            _request: Value,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             panic!("Should not be called")
         }
     }
@@ -982,7 +997,10 @@ mod tests {
     async fn session_prompt_runs_model_and_retains_conversation() {
         struct ScriptedModel;
         impl Model for ScriptedModel {
-            async fn complete(&self, _request: Value) -> Result<Value, Box<dyn std::error::Error>> {
+            async fn complete(
+                &self,
+                _request: Value,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
                 Ok(serde_json::json!({
                       "choices": [{
                         "message": {
@@ -1024,10 +1042,16 @@ mod tests {
         let model = Arc::new(ScriptedModel);
         let (sender, mut receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model, &sender)
+        let dispatch_result = dispatch(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("request should succeed");
+            .expect("dispatch should succeed");
+
+        drop(sender);
+
+        assert!(
+            dispatch_result.is_none(),
+            "spawned prompthandling should send through the writer channel"
+        );
 
         let update = receiver
             .recv()
@@ -1050,6 +1074,11 @@ mod tests {
             update["params"]["update"]["content"]["text"],
             "scripted answer"
         );
+
+        let result = receiver
+            .recv()
+            .await
+            .expect("prompt should send a final response");
 
         assert_eq!(result["jsonrpc"], "2.0");
         assert_eq!(result["id"], serde_json::json!(3));
