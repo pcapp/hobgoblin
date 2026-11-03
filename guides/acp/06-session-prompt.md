@@ -1,6 +1,6 @@
 # Task 6 — Run a prompt turn over ACP
 
-> **In progress.** The prompt wire types and focused parsing coverage are complete; dispatch integration is next.
+> **Complete.** The scripted-model duplex coverage proves update-before-response ordering and reader responsiveness, and the spawned implementation supports multi-turn use in Zed.
 
 ## Working decisions
 
@@ -42,7 +42,7 @@ ACP mode must start without a provider key. Configure the provider when a prompt
 - Prompts for different sessions may run concurrently.
 - Token-by-token streaming is not required; one chunk per answer is acceptable.
 
-## Machine-verifiable acceptance (draft)
+## Machine-verifiable acceptance
 
 - A scripted `Model` test drives initialize → session/new → session/prompt over `tokio::io::duplex` and asserts update-before-response ordering.
 - A test proves the reader handles another request while a prompt is still pending.

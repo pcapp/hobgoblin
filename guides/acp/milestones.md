@@ -9,10 +9,17 @@ The immediate goal is to build ACP support through the real application without 
 | [3 — ACP initialize](03-acp-initialize.md) | The real binary starts with `--acp` and completes ACP initialization without a model key | Tokio stdio, newline framing, JSON-RPC classification, correlation, stdout ownership | ACP test suite against the real binary |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | Same ACP behavior; stdin reader and stdout writer run as separate tasks | `tokio::spawn`, `mpsc`, `'static + Send`, shutdown by channel closure, `tokio::io::duplex` tests | ACP test suite plus duplex tests |
 | [5 — Session creation](05-session-new.md) | `session/new` returns unique IDs backed by a session registry | `Arc<Mutex<…>>` versus an owning task; never hold a lock across `.await` | Extended ACP test suite plus unit tests |
-| [6 — Prompt turn](06-session-prompt.md) (draft) | `session/prompt` runs the model and reports `agent_message_chunk`; **usable in Zed** | One task per request, `Send` futures and errors, exclusive access to a conversation | Scripted-model duplex tests |
+| [6 — Prompt turn](06-session-prompt.md) | `session/prompt` runs the model and reports `agent_message_chunk`; **usable in Zed** | One task per request, `Send` futures and errors, exclusive access to a conversation | Scripted-model duplex tests |
 | [7 — Cancellation](07-cancellation.md) (draft) | `session/cancel` ends a turn with `stopReason: "cancelled"` | `select!`, cancellation by dropping, cancellation safety, `tokio::process` | Mid-turn cancellation tests |
 | [8 — Permissions](08-permissions.md) (draft) | Tools ask the client via `session/request_permission` | Agent-to-client requests, pending-request table, `oneshot`, `timeout` | Deadlock-proof duplex tests |
 | [9 — Tool call updates](09-tool-call-updates.md) (draft) | Zed shows tool calls and their status; **portfolio demo** | Core events versus frontend presentation | Update-sequence tests |
+
+## Hardening backlog
+
+These are valuable follow-ups, but they are not on the critical path for the current milestone sequence:
+
+- Define and prove the policy for overlapping prompts on one session: strict arrival-order FIFO or an explicit busy-session rejection.
+- Extend the subprocess ACP checker with a deterministic successful `session/prompt` case once the real binary has an appropriate model/provider test seam.
 
 ## Deliberately deferred
 

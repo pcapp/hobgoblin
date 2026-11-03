@@ -23,7 +23,8 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Duplex coverage proves update-before-response ordering and reader responsiveness; spawned prompt handling supports multi-turn use in Zed |
+| [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
+| [7 — Cancellation](07-cancellation.md) | not started | Cancel a running prompt without reporting an error and leave the session reusable | Draft guide ready for refinement from the completed Task 6 implementation |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -791,6 +792,34 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Same-session FIFO behavior and the black-box ACP prompt case remain uncovered.
 - Spawned task failures after the writer channel closes are not supervised because the `JoinHandle` is detached.
 - Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
+
+## Session checkpoint — 2026-11-03 (Task 6 complete; Task 7 prepared)
+
+### Current understanding
+
+- Task 6's critical path is complete: prompt work runs outside the reader, emits `agent_message_chunk` before `end_turn`, retains session history, and works for multi-turn conversations in Zed.
+- Same-session FIFO is a separate policy guarantee from mutual exclusion. The per-session mutex prevents concurrent mutation, but strict request-arrival ordering versus busy-session rejection remains a hardening decision.
+- The in-process duplex tests deterministically cover successful prompt transport. A successful black-box prompt case would additionally launch the real binary and requires an appropriate deterministic model/provider seam.
+- Task 7 introduces cancellation by dropping futures, cancellation safety, and cancellation of blocking subprocess work. Its signaling ownership and conversation-history policy remain learner decisions.
+
+### Source checkpoint
+
+- `master` and `origin/master` point to `fee3404`, which includes the Task 6 reader-responsiveness test and preceding spawned-prompt work.
+- `./premerge.sh` passed with all 60 Rust tests before Task 6 was marked complete.
+- The successful multi-turn Zed smoke test is recorded in the preceding checkpoint.
+- Same-session FIFO/busy-session semantics and deterministic subprocess prompt acceptance are recorded in the roadmap hardening backlog rather than treated as Task 6 blockers.
+
+### Exact resume point
+
+1. Start Task 7 by reviewing the current prompt-task lifecycle and the draft cancellation contract in `07-cancellation.md`.
+2. Refine the draft acceptance boundary against the current code without implementing cancellation yet.
+3. When implementation requires it, make the first Task 7 decision: which mechanism signals cancellation and which component owns that signal.
+
+### Unverified or deferred
+
+- The hardening backlog contains same-session FIFO/busy-session semantics and a deterministic black-box successful prompt case.
+- Spawned prompt-task failures after writer closure remain unsupervised.
+- Task 7 cancellation behavior and its acceptance tests have not started.
 
 ## Validation record
 
