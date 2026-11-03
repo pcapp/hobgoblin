@@ -581,8 +581,8 @@ mod tests {
 
     use serde_json::Value;
     use tokio::{
-        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufWriter, duplex},
-        sync::{Mutex, RwLock, mpsc},
+        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, duplex, split},
+        sync::{Mutex, Notify, RwLock, mpsc},
     };
     use uuid::Uuid;
 
@@ -602,7 +602,7 @@ mod tests {
             ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
             METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, RESOURCE_NOT_FOUND_CODE,
             Request, SessionId, classify_message, dispatch, get_session, join_text_blocks,
-            parse_prompt_params, run_acp, validate_version, write_frame,
+            parse_prompt_params, run_acp, run_acp_with_model, validate_version, write_frame,
         },
         agent::Model,
         session::Session,
@@ -991,6 +991,71 @@ mod tests {
             "an error response must not contain a result"
         );
         assert_eq!(result["error"]["code"], RESOURCE_NOT_FOUND_CODE);
+    }
+
+    #[tokio::test]
+    async fn session_prompt_execution_does_not_block_reader() {
+        struct ScriptedModel;
+        impl Model for ScriptedModel {
+            async fn complete(
+                &self,
+                _request: Value,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                Ok(serde_json::json!({
+                      "choices": [{
+                        "message": {
+                          "role": "assistant",
+                          "content": "scripted answer",
+                          "tool_calls": null
+                        }
+                      }]
+                }))
+            }
+        }
+
+        let initialize_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        });
+
+        let (client, agent) = duplex(1024);
+        let (agent_reader, agent_writer) = split(agent);
+        let (client_reader, mut client_writer) = split(client);
+        let reader = BufReader::new(agent_reader);
+        let model = ScriptedModel;
+
+        let mut client_reader = BufReader::new(client_reader);
+
+        let agent_task = tokio::spawn(run_acp_with_model(reader, agent_writer, model));
+
+        let mut init_request_line =
+            serde_json::to_string(&initialize_request).expect("request should serialize");
+        init_request_line.push('\n');
+
+        client_writer
+            .write_all(&init_request_line.as_bytes())
+            .await
+            .expect("to write");
+
+        let mut received = String::new();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        client_writer
+            .shutdown()
+            .await
+            .expect("client writer to shutdown");
+
+        agent_task
+            .await
+            .expect("to join successfully")
+            .expect("to shutdown gracefully");
     }
 
     #[tokio::test]
