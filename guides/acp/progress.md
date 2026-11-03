@@ -23,7 +23,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Prompt work runs in a spawned task and sends update then response; reader-responsiveness coverage is next |
+| [6 — Prompt turn](06-session-prompt.md) | in progress | Run a model turn and report its answer over ACP without blocking the reader | Duplex coverage proves update-before-response ordering and reader responsiveness; spawned prompt handling supports multi-turn use in Zed |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -762,6 +762,36 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Spawned task failures after the writer channel closes are not supervised because the `JoinHandle` is detached.
 - Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
 
+## Session checkpoint — 2026-11-03 (Task 6 reader responsiveness and Zed smoke test)
+
+### Current understanding
+
+- A controllable model can expose deterministic concurrency with two `Arc<Notify>` signals: the model signals that `complete` started, then waits for the test to release it.
+- `Notify::notify_one` retains a permit when no waiter is active yet, so the test and model do not lose either signal if their scheduling order varies.
+- A duplex test proves reader responsiveness by withholding the model-release signal, sending another request, and receiving its correlated response before the pending prompt can emit output.
+- Reading and asserting the subsequent `session/update` and correlated `end_turn` response proves their wire ordering, not merely their eventual production.
+- `serde_json::Value::as_str` extracts the contents of a JSON string; `Value::to_string` serializes it with JSON quotation marks.
+
+### Source checkpoint
+
+- Branch `prompt-execution-test` is at `c67e703` with uncommitted changes in `src/acp.rs` and this ledger.
+- `session_prompt_execution_does_not_block_reader` drives initialize, `session/new`, and `session/prompt` through `tokio::io::duplex` using a model paused inside `complete`.
+- While that prompt remains paused, a second `session/new` receives a valid correlated response. After release, the original prompt emits its expected `agent_message_chunk` update followed by its correlated `end_turn` response.
+- A manual smoke test of the spawned implementation succeeded in Zed, including a multi-turn conversation that retained session history.
+- `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 60 Rust tests.
+
+### Exact resume point
+
+1. Review and commit the current responsiveness-test and progress-ledger changes when ready.
+2. Reconcile the remaining same-session FIFO and black-box ACP prompt coverage noted below with the final Task 6 completion criteria.
+3. If no additional Task 6 acceptance coverage is required, mark Task 6 complete and begin Task 7 cancellation design.
+
+### Unverified or deferred
+
+- Same-session FIFO behavior and the black-box ACP prompt case remain uncovered.
+- Spawned task failures after the writer channel closes are not supervised because the `JoinHandle` is detached.
+- Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -898,6 +928,17 @@ Commands: cargo check --locked; cargo test --locked session_prompt_runs_model_an
 Exit statuses: 0; 0; 0; 0
 Tests run: 1 focused; 59 full-suite; 59 through premerge
 Tests passed: 1 focused; 59 full-suite; 59 through premerge
+Checker report path: none
+```
+
+```text
+Date: 2026-11-03
+Task: 6 — Reader responsiveness and transport ordering (checkpoint)
+Commit or tree state: prompt-execution-test at c67e703; uncommitted responsiveness-test and progress-ledger changes
+Commands: ./premerge.sh
+Exit statuses: 0
+Tests run: 60
+Tests passed: 60
 Checker report path: none
 ```
 

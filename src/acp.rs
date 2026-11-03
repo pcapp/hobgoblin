@@ -584,6 +584,7 @@ mod tests {
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, duplex, split},
         sync::{Mutex, Notify, RwLock, mpsc},
     };
+
     use uuid::Uuid;
 
     struct InertModel;
@@ -995,12 +996,18 @@ mod tests {
 
     #[tokio::test]
     async fn session_prompt_execution_does_not_block_reader() {
-        struct ScriptedModel;
+        struct ScriptedModel {
+            started: Arc<Notify>,
+            release: Arc<Notify>,
+        }
+
         impl Model for ScriptedModel {
             async fn complete(
                 &self,
                 _request: Value,
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                self.started.notify_one();
+                self.release.notified().await;
                 Ok(serde_json::json!({
                       "choices": [{
                         "message": {
@@ -1026,7 +1033,13 @@ mod tests {
         let (agent_reader, agent_writer) = split(agent);
         let (client_reader, mut client_writer) = split(client);
         let reader = BufReader::new(agent_reader);
-        let model = ScriptedModel;
+
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let model = ScriptedModel {
+            started: started.clone(),
+            release: release.clone(),
+        };
 
         let mut client_reader = BufReader::new(client_reader);
 
@@ -1037,15 +1050,150 @@ mod tests {
         init_request_line.push('\n');
 
         client_writer
-            .write_all(&init_request_line.as_bytes())
+            .write_all(init_request_line.as_bytes())
             .await
-            .expect("to write");
+            .expect("to write the initialize request");
 
         let mut received = String::new();
         client_reader
             .read_line(&mut received)
             .await
             .expect("client should read agent output");
+
+        let result = serde_json::from_str(&received).expect("to be a string");
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(1));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
+
+        let mut new_session_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "session/new",
+          "params": {
+            "cwd": "/tmp",
+            "mcpServers": []
+          }
+        })
+        .to_string();
+        new_session_request.push('\n');
+
+        client_writer
+            .write_all(new_session_request.as_bytes())
+            .await
+            .expect("to write the new session request");
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        // Validate the session/new response.
+        let result = serde_json::from_str(&received).expect("to be a string");
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(2));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
+        let session_id = result["result"]["sessionId"].clone();
+
+        let mut prompt_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+            "sessionId": session_id,
+            "prompt": [
+              {
+                "type": "text",
+                "text": "What is 1+1?"
+              }
+            ]
+          }
+        })
+        .to_string();
+        prompt_request.push('\n');
+
+        client_writer
+            .write_all(prompt_request.as_bytes())
+            .await
+            .expect("to write the prompt request");
+
+        started.notified().await;
+
+        let mut second_session_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 4,
+          "method": "session/new",
+          "params": {
+            "cwd": "/tmp",
+            "mcpServers": []
+          }
+        })
+        .to_string();
+        second_session_request.push('\n');
+
+        client_writer
+            .write_all(second_session_request.as_bytes())
+            .await
+            .expect("to write the new session request");
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read the second session request");
+        let result: Value = serde_json::from_str(&received).expect("to be a string");
+        assert_eq!(result["id"], 4);
+        let second_session_id = result["result"]["sessionId"]
+            .as_str()
+            .expect("session/new sshould return a valid session ID");
+        Uuid::parse_str(second_session_id).expect("a valid session ID");
+        assert!(result["error"].is_null());
+
+        release.notify_one();
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read update notification");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+
+        assert_eq!(response["params"]["sessionId"], session_id);
+        let expected_response = serde_json::json!({
+            "jsonrpc":"2.0",
+            "method":"session/update",
+            "params":{
+                "sessionId":session_id,
+                "update":{
+                    "content":{
+                        "text":"scripted answer",
+                        "type":"text"},
+                    "sessionUpdate":"agent_message_chunk"
+                }
+            }
+        });
+
+        assert_eq!(expected_response, response);
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read prompt response");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+        assert_eq!(response["id"], 3);
+        assert_eq!(response["result"]["stopReason"], "end_turn");
+        assert!(response["error"].is_null());
 
         client_writer
             .shutdown()
