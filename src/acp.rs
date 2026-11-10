@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::agent::{self, Model, OpenRouterModel};
@@ -25,7 +25,21 @@ impl SessionId {
     }
 }
 
-type SessionHandle = Arc<Mutex<Session>>;
+struct SessionEntry {
+    session: Mutex<Session>,
+    active_turn_stop: Mutex<Option<oneshot::Sender<()>>>,
+}
+
+impl SessionEntry {
+    fn new(session: Session) -> Self {
+        Self {
+            session: Mutex::new(session),
+            active_turn_stop: Mutex::new(None),
+        }
+    }
+}
+
+type SessionHandle = Arc<SessionEntry>;
 type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
 
 async fn get_session(registry: &SessionRegistry, session_id: &SessionId) -> Option<SessionHandle> {
@@ -480,11 +494,11 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
         }
 
         let session_id = SessionId::new();
-        let session = Arc::new(Mutex::new(Session::empty(cwd)));
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(cwd)));
 
         {
             let mut sessions = state.sessions.write().await;
-            sessions.insert(session_id.clone(), session);
+            sessions.insert(session_id.clone(), session_entry);
         }
 
         let result = serde_json::json!({
@@ -509,12 +523,12 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
         };
 
         return match get_session(&state.sessions, &session_id).await {
-            Some(session) => {
+            Some(session_entry) => {
                 let model = model.clone();
                 let sender = sender.clone();
 
                 tokio::spawn(async move {
-                    let mut session_guard = session.lock().await;
+                    let mut session_guard = session_entry.session.lock().await;
 
                     let answer =
                         match agent::turn(model.as_ref(), &mut session_guard, &prompt).await {
@@ -602,8 +616,9 @@ mod tests {
         acp::{
             ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
             METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, RESOURCE_NOT_FOUND_CODE,
-            Request, SessionId, classify_message, dispatch, get_session, join_text_blocks,
-            parse_prompt_params, run_acp, run_acp_with_model, validate_version, write_frame,
+            Request, SessionEntry, SessionId, classify_message, dispatch, get_session,
+            join_text_blocks, parse_prompt_params, run_acp, run_acp_with_model, validate_version,
+            write_frame,
         },
         agent::Model,
         session::Session,
@@ -813,7 +828,7 @@ mod tests {
 
         assert_ne!(first_session_id, second_session_id);
 
-        let (first_session_handle, second_session_handle) = {
+        let (first_session_entry, second_session_entry) = {
             let registry = state.sessions.read().await;
 
             assert_eq!(registry.len(), 2);
@@ -831,7 +846,7 @@ mod tests {
         };
 
         {
-            let first_session = first_session_handle.lock().await;
+            let first_session = first_session_entry.session.lock().await;
             assert_eq!(
                 first_session.cwd(),
                 std::path::Path::new("/tmp/session_one")
@@ -840,7 +855,7 @@ mod tests {
         }
 
         {
-            let second_session = second_session_handle.lock().await;
+            let second_session = second_session_entry.session.lock().await;
 
             assert_eq!(
                 second_session.cwd(),
@@ -875,7 +890,7 @@ mod tests {
         let session_id: SessionId = serde_json::from_value(response["result"]["sessionId"].clone())
             .expect("session ID should be a valid UUID");
 
-        let session_handle = {
+        let session_entry = {
             let registry = state.sessions.read().await;
 
             registry
@@ -884,7 +899,7 @@ mod tests {
                 .expect("returned session ID should exist in the registry")
         };
 
-        let session = session_handle.lock().await;
+        let session = session_entry.session.lock().await;
 
         assert_eq!(session.cwd(), std::path::Path::new("/tmp"));
         assert!(response.get("error").is_none());
@@ -1228,7 +1243,7 @@ mod tests {
         }
 
         let session_id = "00000000-0000-0000-0000-000000000001";
-        let session = Arc::new(Mutex::new(Session::empty(PathBuf::from("/tmp"))));
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
 
         let mut state = ConnectionState::new();
         {
@@ -1236,7 +1251,7 @@ mod tests {
             let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
             let session_id = SessionId(uuid);
 
-            registry.insert(session_id, Arc::clone(&session));
+            registry.insert(session_id, Arc::clone(&session_entry));
         }
         state.initialized = true;
 
@@ -1301,7 +1316,7 @@ mod tests {
         );
         assert_eq!(result["result"]["stopReason"], "end_turn");
 
-        let session_guard = session.lock().await;
+        let session_guard = session_entry.session.lock().await;
         assert_eq!(session_guard.conversation.messages.len(), 2);
 
         assert_eq!(session_guard.conversation.messages[0]["role"], "user");
@@ -2023,26 +2038,27 @@ mod tests {
     #[tokio::test]
     async fn get_session_should_return_sessions_if_they_are_registered() {
         let session = Session::empty(PathBuf::from("/tmp"));
-        let session_handle = Arc::new(Mutex::new(session));
+        let session_entry = Arc::new(SessionEntry::new(session));
         let mut session_by_id = HashMap::new();
         let session_id = SessionId(
             Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("a valid UUID"),
         );
 
-        session_by_id.insert(session_id.clone(), Arc::clone(&session_handle));
+        session_by_id.insert(session_id.clone(), Arc::clone(&session_entry));
         let registry = Arc::new(RwLock::new(session_by_id));
 
         let handle = get_session(&registry, &session_id)
             .await
             .expect("a concrete session");
 
-        assert!(Arc::ptr_eq(&session_handle, &handle));
+        assert!(Arc::ptr_eq(&session_entry, &handle));
     }
 
     #[tokio::test]
     async fn get_session_should_return_none_for_absent_sessions() {
         let session = Session::empty(PathBuf::from("/tmp"));
-        let session_handle = Arc::new(Mutex::new(session));
+
+        let session_entry = Arc::new(SessionEntry::new(session));
         let mut session_by_id = HashMap::new();
         let first_session_id = SessionId(
             Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("a valid UUID"),
@@ -2051,7 +2067,7 @@ mod tests {
             Uuid::parse_str("00000000-0000-0000-0000-000000000002").expect("a valid UUID"),
         );
 
-        session_by_id.insert(first_session_id.clone(), session_handle);
+        session_by_id.insert(first_session_id.clone(), session_entry);
         let registry = Arc::new(RwLock::new(session_by_id));
 
         assert!(get_session(&registry, &missing_session_id).await.is_none())
