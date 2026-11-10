@@ -13,6 +13,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 - Do not use an ACP SDK or external ACP schema crate.
 - Use high-level, goal-driven tasks with machine-verifiable acceptance checks.
 - The learner owns the design and writes the Rust.
+- When the learner identifies code or tests as unfinished, review only the portion they say is ready. Treat scaffolding, temporary diagnostics, TODOs, and expected gaps as intentional; do not critique or pre-solve them unless asked. Reserve full requirements and coverage review for when the learner says the work is ready.
 
 ## Task status
 
