@@ -68,6 +68,18 @@ impl ConnectionState {
 }
 
 #[derive(Debug, Deserialize)]
+struct Notification<T> {
+    method: String,
+    params: Option<T>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelParams {
+    session_id: SessionId,
+}
+
+#[derive(Debug, Deserialize)]
 struct Request<T> {
     id: Value,
 
@@ -365,7 +377,30 @@ where
                     sender.send(response).await?;
                 }
             }
-            MessageKind::Notification | MessageKind::Response => {}
+            MessageKind::Notification => {
+                let notification: Notification<Value> = serde_json::from_str(&input)?;
+                if notification.method == "session/cancel" {
+                    let params = notification.params.unwrap_or(Value::Null);
+
+                    // todo: What does ACP say about notification errors?
+                    if let Ok(params) = serde_json::from_value::<CancelParams>(params) {
+                        if let Some(session) =
+                            get_session(&state.sessions, &params.session_id).await
+                        {
+                            let turn_stop = {
+                                let mut guard = session.active_turn_stop.lock().await;
+                                guard.take()
+                            };
+
+                            if let Some(turn_stop) = turn_stop {
+                                let _ = turn_stop.send(());
+                            }
+                        }
+                    }
+                }
+            }
+
+            MessageKind::Response => {}
         }
     }
 
@@ -529,49 +564,75 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
 
                 tokio::spawn(async move {
                     let mut session_guard = session_entry.session.lock().await;
+                    let _history_length = session_guard.conversation.messages.len();
+                    let (stop_sender, stop_receiver) = oneshot::channel::<()>();
 
-                    let answer =
-                        match agent::turn(model.as_ref(), &mut session_guard, &prompt).await {
-                            Ok(answer) => answer,
-                            Err(error) => {
-                                let message = format!("Request {} failed: {error}", request.id);
+                    {
+                        let mut turn_stop = session_entry.active_turn_stop.lock().await;
+                        turn_stop.replace(stop_sender);
+                    }
 
-                                let response =
-                                    ErrorResponse::new(request.id, INTERNAL_ERROR_CODE, &message);
-                                sender.send(serde_json::to_value(response)?).await?;
-
-                                return Ok(());
+                    let turn_result = tokio::select! {
+                        result = agent::turn(model.as_ref(), &mut session_guard, &prompt) => {
+                                Some(result)
                             }
-                        };
 
-                    let session_update = serde_json::json!({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": {
-                            "sessionId": &session_id.0.to_string(),
-                            "update": {
-                                "content": {
-                                    "type": "text",
-                                    "text": answer
-                                },
-                                "sessionUpdate": "agent_message_chunk",
+                            _ = stop_receiver => {
+                                None
                             }
-                        }
-                    });
-
-                    sender.send(session_update).await?;
-
-                    let response = SuccessResponse {
-                        jsonrpc: String::from("2.0"),
-                        id: request.id,
-                        result: serde_json::json!({
-                            "stopReason": "end_turn"
-                        }),
                     };
 
-                    sender.send(serde_json::to_value(response)?).await?;
+                    match turn_result {
+                        Some(result) => {
+                            let answer = match result {
+                                Ok(answer) => answer,
+                                Err(error) => {
+                                    let message = format!("Request {} failed: {error}", request.id);
 
-                    Ok::<(), AcpError>(())
+                                    let response = ErrorResponse::new(
+                                        request.id,
+                                        INTERNAL_ERROR_CODE,
+                                        &message,
+                                    );
+                                    sender.send(serde_json::to_value(response)?).await?;
+
+                                    return Ok(());
+                                }
+                            };
+
+                            let session_update = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "session/update",
+                                "params": {
+                                    "sessionId": &session_id.0.to_string(),
+                                    "update": {
+                                        "content": {
+                                            "type": "text",
+                                            "text": answer
+                                        },
+                                        "sessionUpdate": "agent_message_chunk",
+                                    }
+                                }
+                            });
+
+                            sender.send(session_update).await?;
+
+                            let response = SuccessResponse {
+                                jsonrpc: String::from("2.0"),
+                                id: request.id,
+                                result: serde_json::json!({
+                                    "stopReason": "end_turn"
+                                }),
+                            };
+
+                            sender.send(serde_json::to_value(response)?).await?;
+
+                            Ok::<(), AcpError>(())
+                        }
+                        None => {
+                            todo!("Clean-up after the cancellation.");
+                        }
+                    }
                 });
 
                 Ok(None)
@@ -1330,6 +1391,170 @@ mod tests {
             session_guard.conversation.messages[1]["content"],
             "scripted answer"
         );
+    }
+
+    #[tokio::test]
+    async fn should_cancel_active_prompts() {
+        struct ScriptedModel {
+            started: Arc<Notify>,
+            release: Arc<Notify>,
+        }
+
+        impl Model for ScriptedModel {
+            async fn complete(
+                &self,
+                _request: Value,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                self.started.notify_one();
+                self.release.notified().await;
+                Ok(serde_json::json!({
+                      "choices": [{
+                        "message": {
+                          "role": "assistant",
+                          "content": "scripted answer",
+                          "tool_calls": null
+                        }
+                      }]
+                }))
+            }
+        }
+
+        let (client_end, agent_end) = duplex(1024);
+        let (client_read, mut client_writer) = tokio::io::split(client_end);
+        let (agent_read, agent_write) = tokio::io::split(agent_end);
+
+        let agent_input = tokio::io::BufReader::new(agent_read);
+        let agent_output = BufWriter::new(agent_write);
+
+        let mut client_reader = tokio::io::BufReader::new(client_read);
+
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let model = ScriptedModel {
+            started: started.clone(),
+            release: release.clone(),
+        };
+
+        let agent_task = tokio::spawn(run_acp_with_model(agent_input, agent_output, model));
+
+        let mut initialize_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        })
+        .to_string();
+        initialize_request.push('\n');
+
+        client_writer
+            .write_all(initialize_request.as_bytes())
+            .await
+            .expect("to write the initialize message");
+
+        let mut response = String::new();
+        client_reader
+            .read_line(&mut response)
+            .await
+            .expect("to read the agent's response");
+
+        let response: serde_json::Value =
+            serde_json::from_str(&response).expect("agent response should be valid JSON");
+
+        validate_version(&response).expect("response should use JSON-RPC 2.0");
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
+
+        // Handle session/new
+        let mut new_session_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "session/new",
+          "params": {
+            "cwd": "/tmp",
+            "mcpServers": []
+          }
+        })
+        .to_string();
+        new_session_request.push('\n');
+
+        client_writer
+            .write_all(new_session_request.as_bytes())
+            .await
+            .expect("to write the new session request");
+
+        let mut received = String::new();
+        received.clear();
+
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read agent output");
+
+        // Validate the session/new response.
+        let result = serde_json::from_str(&received).expect("to be a string");
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(2));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
+        let session_id = result["result"]["sessionId"].clone();
+        println!("Session: {}", session_id);
+
+        // Send a prompt and verify the scripted model started processing.
+        let mut prompt_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+            "sessionId": session_id,
+            "prompt": [
+              {
+                "type": "text",
+                "text": "What is 1+1?"
+              }
+            ]
+          }
+        })
+        .to_string();
+        prompt_request.push('\n');
+
+        client_writer
+            .write_all(prompt_request.as_bytes())
+            .await
+            .expect("to write the prompt request");
+
+        started.notified().await;
+
+        // Now, cancel the prompt.
+        println!("Send the cancel notification.");
+        let mut cancel_notification = serde_json::json!({
+          "jsonrpc": "2.0",
+          "method": "session/cancel",
+          "params": {
+            "sessionId": session_id
+          }
+        })
+        .to_string();
+        cancel_notification.push('\n');
+
+        client_writer
+            .write_all(cancel_notification.as_bytes())
+            .await
+            .expect("to write the cancel notification");
+
+        client_writer
+            .shutdown()
+            .await
+            .expect("to cleanly shutdown the writer");
+
+        agent_task
+            .await
+            .expect("agent task should join")
+            .expect("ACP transport should shutdown cleanly");
     }
 
     #[tokio::test]
