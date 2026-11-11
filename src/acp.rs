@@ -674,7 +674,10 @@ mod tests {
 
     use serde_json::Value;
     use tokio::{
-        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, duplex, split},
+        io::{
+            AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, DuplexStream,
+            ReadHalf, duplex, split,
+        },
         sync::{Notify, RwLock, mpsc},
     };
 
@@ -702,6 +705,22 @@ mod tests {
         agent::Model,
         session::Session,
     };
+
+    async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            let mut received = String::new();
+            match reader.read_line(&mut received).await {
+                Ok(0) => panic!("Received EOF instead of a complete frame"),
+                Ok(_) => {
+                    assert!(received.ends_with("\n"));
+                    serde_json::from_str(&received).expect("frame should be valid JSON")
+                }
+                Err(error) => panic!("Unable to read a frame: {}", error),
+            }
+        })
+        .await
+        .expect("to read a JSON RPC frame")
+    }
 
     #[test]
     fn omitted_client_capabilities_uses_default() {
@@ -1148,14 +1167,7 @@ mod tests {
             .await
             .expect("to write the initialize request");
 
-        let mut received = String::new();
-        client_reader
-            .read_line(&mut received)
-            .await
-            .expect("client should read agent output");
-
-        let result = serde_json::from_str(&received).expect("to be a string");
-        validate_version(&result).expect("response should use JSON-RPC 2.0");
+        let result = read_frame(&mut client_reader).await;
 
         assert_eq!(result["id"], serde_json::json!(1));
         assert!(
@@ -1180,15 +1192,7 @@ mod tests {
             .await
             .expect("to write the new session request");
 
-        received.clear();
-        client_reader
-            .read_line(&mut received)
-            .await
-            .expect("client should read agent output");
-
-        // Validate the session/new response.
-        let result = serde_json::from_str(&received).expect("to be a string");
-        validate_version(&result).expect("response should use JSON-RPC 2.0");
+        let result = read_frame(&mut client_reader).await;
 
         assert_eq!(result["id"], serde_json::json!(2));
         assert!(
@@ -1238,12 +1242,7 @@ mod tests {
             .await
             .expect("to write the new session request");
 
-        received.clear();
-        client_reader
-            .read_line(&mut received)
-            .await
-            .expect("client should read the second session request");
-        let result: Value = serde_json::from_str(&received).expect("to be a string");
+        let result = read_frame(&mut client_reader).await;
         assert_eq!(result["id"], 4);
         let second_session_id = result["result"]["sessionId"]
             .as_str()
@@ -1253,15 +1252,9 @@ mod tests {
 
         release.notify_one();
 
-        received.clear();
-        client_reader
-            .read_line(&mut received)
-            .await
-            .expect("client should read update notification");
+        let result = read_frame(&mut client_reader).await;
 
-        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
-
-        assert_eq!(response["params"]["sessionId"], session_id);
+        assert_eq!(result["params"]["sessionId"], session_id);
         let expected_response = serde_json::json!({
             "jsonrpc":"2.0",
             "method":"session/update",
@@ -1276,15 +1269,9 @@ mod tests {
             }
         });
 
-        assert_eq!(expected_response, response);
+        assert_eq!(expected_response, result);
 
-        received.clear();
-        client_reader
-            .read_line(&mut received)
-            .await
-            .expect("client should read prompt response");
-
-        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+        let response = read_frame(&mut client_reader).await;
         assert_eq!(response["id"], 3);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
@@ -1429,7 +1416,6 @@ mod tests {
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
                 {
                     let mut guard = self.messages.lock().unwrap();
-                    // println!("{:?}", request["messages"]);
                     guard.push(request["messages"].clone());
                 }
 
@@ -1744,11 +1730,12 @@ mod tests {
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
 
-        let third_request = {
+        let (num_messages, third_request) = {
             let guard = messages.lock().unwrap();
-            guard.get(2).unwrap().clone()
+            (guard.len(), guard.get(2).unwrap().clone())
         };
 
+        assert_eq!(3, num_messages);
         assert_eq!(
             third_request,
             serde_json::json!([
