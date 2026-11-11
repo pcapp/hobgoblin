@@ -564,7 +564,7 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
 
                 tokio::spawn(async move {
                     let mut session_guard = session_entry.session.lock().await;
-                    let _history_length = session_guard.conversation.messages.len();
+                    let history_length = session_guard.conversation.messages.len();
                     let (stop_sender, stop_receiver) = oneshot::channel::<()>();
 
                     {
@@ -630,7 +630,19 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
                             Ok::<(), AcpError>(())
                         }
                         None => {
-                            todo!("Clean-up after the cancellation.");
+                            session_guard.conversation.messages.truncate(history_length);
+
+                            let response = SuccessResponse {
+                                jsonrpc: String::from("2.0"),
+                                id: request.id,
+                                result: serde_json::json!({
+                                    "stopReason": "cancelled"
+                                }),
+                            };
+
+                            sender.send(serde_json::to_value(response)?).await?;
+
+                            Ok::<(), AcpError>(())
                         }
                     }
                 });
@@ -652,12 +664,18 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, io::Cursor, path::PathBuf, sync::Arc};
+    use std::{
+        collections::HashMap,
+        io::Cursor,
+        path::PathBuf,
+        sync::{Arc, Mutex},
+        time::Duration,
+    };
 
     use serde_json::Value;
     use tokio::{
         io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, duplex, split},
-        sync::{Mutex, Notify, RwLock, mpsc},
+        sync::{Notify, RwLock, mpsc},
     };
 
     use uuid::Uuid;
@@ -1395,27 +1413,67 @@ mod tests {
 
     #[tokio::test]
     async fn should_cancel_active_prompts() {
+        let messages = Arc::new(Mutex::new(Vec::new()));
+
         struct ScriptedModel {
             started: Arc<Notify>,
             release: Arc<Notify>,
+            turn_count: Arc<Mutex<i32>>,
+            messages: Arc<Mutex<Vec<Value>>>,
         }
 
         impl Model for ScriptedModel {
             async fn complete(
                 &self,
-                _request: Value,
+                request: Value,
             ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                self.started.notify_one();
-                self.release.notified().await;
-                Ok(serde_json::json!({
-                      "choices": [{
-                        "message": {
-                          "role": "assistant",
-                          "content": "scripted answer",
-                          "tool_calls": null
-                        }
-                      }]
-                }))
+                {
+                    let mut guard = self.messages.lock().unwrap();
+                    // println!("{:?}", request["messages"]);
+                    guard.push(request["messages"].clone());
+                }
+
+                let turn_number = {
+                    let mut guard = self.turn_count.lock().expect("to get the lock");
+                    *guard += 1;
+                    *guard
+                };
+
+                if turn_number == 1 {
+                    Ok(serde_json::json!({
+                          "choices": [{
+                            "message": {
+                              "role": "assistant",
+                              "content": "first",
+                              "tool_calls": null
+                            }
+                          }]
+                    }))
+                } else if turn_number == 2 {
+                    self.started.notify_one();
+                    self.release.notified().await;
+                    Ok(serde_json::json!({
+                          "choices": [{
+                            "message": {
+                              "role": "assistant",
+                              "content": "second",
+                              "tool_calls": null
+                            }
+                          }]
+                    }))
+                } else if turn_number == 3 {
+                    Ok(serde_json::json!({
+                          "choices": [{
+                            "message": {
+                              "role": "assistant",
+                              "content": "third",
+                              "tool_calls": null
+                            }
+                          }]
+                    }))
+                } else {
+                    panic!("Should not get here.");
+                }
             }
         }
 
@@ -1433,6 +1491,8 @@ mod tests {
         let model = ScriptedModel {
             started: started.clone(),
             release: release.clone(),
+            turn_count: Arc::new(Mutex::new(0)),
+            messages: messages.clone(),
         };
 
         let agent_task = tokio::spawn(run_acp_with_model(agent_input, agent_output, model));
@@ -1502,7 +1562,6 @@ mod tests {
             "a success response must not contain an error"
         );
         let session_id = result["result"]["sessionId"].clone();
-        println!("Session: {}", session_id);
 
         // Send a prompt and verify the scripted model started processing.
         let mut prompt_request = serde_json::json!({
@@ -1514,7 +1573,7 @@ mod tests {
             "prompt": [
               {
                 "type": "text",
-                "text": "What is 1+1?"
+                "text": "first question"
               }
             ]
           }
@@ -1524,6 +1583,65 @@ mod tests {
 
         client_writer
             .write_all(prompt_request.as_bytes())
+            .await
+            .expect("to write the prompt request");
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("to get an agent_message_chunk");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+
+        assert_eq!(response["params"]["sessionId"], session_id);
+        let expected_response = serde_json::json!({
+            "jsonrpc":"2.0",
+            "method":"session/update",
+            "params":{
+                "sessionId":session_id,
+                "update":{
+                    "content":{
+                        "text":"first",
+                        "type":"text"},
+                    "sessionUpdate":"agent_message_chunk"
+                }
+            }
+        });
+
+        assert_eq!(expected_response, response);
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read prompt response");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+        assert_eq!(response["id"], 3);
+        assert_eq!(response["result"]["stopReason"], "end_turn");
+        assert!(response["error"].is_null());
+
+        // Send the second message that we are going to cancel
+        let mut second_prompt_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 4,
+          "method": "session/prompt",
+          "params": {
+            "sessionId": session_id,
+            "prompt": [
+              {
+                "type": "text",
+                "text": "second question"
+              }
+            ]
+          }
+        })
+        .to_string();
+        second_prompt_request.push('\n');
+
+        client_writer
+            .write_all(second_prompt_request.as_bytes())
             .await
             .expect("to write the prompt request");
 
@@ -1545,6 +1663,100 @@ mod tests {
             .write_all(cancel_notification.as_bytes())
             .await
             .expect("to write the cancel notification");
+
+        received.clear();
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            client_reader.read_line(&mut received),
+        )
+        .await
+        .expect("to receive a response")
+        .expect("to read a line");
+
+        // Must get a stopReason: cancelled
+        let result = serde_json::from_str(&received).expect("to be a string");
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(4));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
+        assert_eq!(result["result"]["stopReason"], "cancelled");
+
+        // Send the third prompt and check the history doesn't include the second cancelled prompt.
+        let mut third_prompt_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 5,
+          "method": "session/prompt",
+          "params": {
+            "sessionId": session_id,
+            "prompt": [
+              {
+                "type": "text",
+                "text": "third question"
+              }
+            ]
+          }
+        })
+        .to_string();
+        third_prompt_request.push('\n');
+
+        client_writer
+            .write_all(third_prompt_request.as_bytes())
+            .await
+            .expect("to write the prompt request");
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("to get an agent_message_chunk");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+
+        assert_eq!(response["params"]["sessionId"], session_id);
+        let expected_response = serde_json::json!({
+            "jsonrpc":"2.0",
+            "method":"session/update",
+            "params":{
+                "sessionId":session_id,
+                "update":{
+                    "content":{
+                        "text":"third",
+                        "type":"text"},
+                    "sessionUpdate":"agent_message_chunk"
+                }
+            }
+        });
+
+        assert_eq!(expected_response, response);
+
+        received.clear();
+        client_reader
+            .read_line(&mut received)
+            .await
+            .expect("client should read prompt response");
+
+        let response: Value = serde_json::from_str(&received).expect("to be valid JSON");
+        assert_eq!(response["id"], 5);
+        assert_eq!(response["result"]["stopReason"], "end_turn");
+        assert!(response["error"].is_null());
+
+        let third_request = {
+            let guard = messages.lock().unwrap();
+            guard.get(2).unwrap().clone()
+        };
+
+        assert_eq!(
+            third_request,
+            serde_json::json!([
+                {"role": "user", "content": "first question"},
+                 {"role": "assistant", "content": "first", "tool_calls": null},
+                 {"role": "user", "content": "third question"}
+            ])
+        );
 
         client_writer
             .shutdown()
