@@ -383,18 +383,17 @@ where
                     let params = notification.params.unwrap_or(Value::Null);
 
                     // todo: What does ACP say about notification errors?
-                    if let Ok(params) = serde_json::from_value::<CancelParams>(params) {
-                        if let Some(session) =
+                    if let Ok(params) = serde_json::from_value::<CancelParams>(params)
+                        && let Some(session) =
                             get_session(&state.sessions, &params.session_id).await
-                        {
-                            let turn_stop = {
-                                let mut guard = session.active_turn_stop.lock().await;
-                                guard.take()
-                            };
+                    {
+                        let turn_stop = {
+                            let mut guard = session.active_turn_stop.lock().await;
+                            guard.take()
+                        };
 
-                            if let Some(turn_stop) = turn_stop {
-                                let _ = turn_stop.send(());
-                            }
+                        if let Some(turn_stop) = turn_stop {
+                            let _ = turn_stop.send(());
                         }
                     }
                 }
