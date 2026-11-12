@@ -714,7 +714,7 @@ mod tests {
             TurnResponse::{Done, TimeGated},
         },
         session::Session,
-        test_messages::assistant_reply,
+        test_messages::{assistant_reply, make_prompt_request},
     };
 
     async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
@@ -1156,17 +1156,8 @@ mod tests {
         let mut state = ConnectionState::new();
         state.initialized = true;
 
-        let value = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 3,
-          "method": "session/prompt",
-          "params": {
-              "sessionId": "00000000-0000-0000-0000-000000000001",
-              "prompt": [
-                  { "type": "text", "text": "What is 1+1?"}
-              ]
-          }
-        });
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let value = make_prompt_request(3, session_id, "What is 1+1?");
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
         let model = Arc::new(InertModel);
         let (sender, _receiver) = mpsc::channel(2);
@@ -1208,20 +1199,7 @@ mod tests {
         initialize(&mut client_writer, &mut client_reader).await;
         let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
 
-        let prompt_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 3,
-          "method": "session/prompt",
-          "params": {
-            "sessionId": session_id,
-            "prompt": [
-              {
-                "type": "text",
-                "text": "What is 1+1?"
-              }
-            ]
-          }
-        });
+        let prompt_request = make_prompt_request(3, &session_id, "What is 1+1?");
 
         send_frame(&mut client_writer, &prompt_request).await;
 
@@ -1404,20 +1382,7 @@ mod tests {
         let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
 
         // Send a prompt and verify the scripted model started processing.
-        let prompt_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 3,
-          "method": "session/prompt",
-          "params": {
-            "sessionId": session_id,
-            "prompt": [
-              {
-                "type": "text",
-                "text": "first question"
-              }
-            ]
-          }
-        });
+        let prompt_request = make_prompt_request(3, &session_id, "first question");
 
         send_frame(&mut client_writer, &prompt_request).await;
         let response = read_frame(&mut client_reader).await;
@@ -1445,20 +1410,7 @@ mod tests {
         assert!(response["error"].is_null());
 
         // Send the second message that we are going to cancel
-        let second_prompt_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 4,
-          "method": "session/prompt",
-          "params": {
-            "sessionId": session_id,
-            "prompt": [
-              {
-                "type": "text",
-                "text": "second question"
-              }
-            ]
-          }
-        });
+        let second_prompt_request = make_prompt_request(4, &session_id, "second question");
 
         send_frame(&mut client_writer, &second_prompt_request).await;
 
