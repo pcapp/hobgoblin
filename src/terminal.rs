@@ -62,39 +62,18 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeMap, io::Cursor, sync::Mutex};
+    use std::{
+        collections::{BTreeMap, VecDeque},
+        io::Cursor,
+    };
 
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use crate::{
-        agent,
+        scripted_model::{ScriptedModel, TurnResponse::Done},
         skills::SkillLoader,
         terminal::{run_interactive, run_once},
     };
-
-    struct ScriptedModel {
-        response: Value,
-        requests: Mutex<Vec<Value>>,
-    }
-
-    impl ScriptedModel {
-        fn new(response: Value) -> Self {
-            Self {
-                response,
-                requests: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    impl agent::Model for ScriptedModel {
-        async fn complete(
-            &self,
-            request: Value,
-        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-            self.requests.lock().unwrap().push(request);
-            Ok(self.response.clone())
-        }
-    }
 
     struct EmptySkillLoader {}
 
@@ -109,15 +88,18 @@ mod tests {
 
     #[tokio::test]
     async fn runs_once_writes_one_turn_answer_to_output() {
-        let model = ScriptedModel::new(json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "scripted answer",
-                    "tool_calls": null
-                }
-            }]
-        }));
+        let responses = [Done {
+            response: json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "scripted answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let skill_loader = EmptySkillLoader {};
 
@@ -138,7 +120,7 @@ mod tests {
     #[tokio::test]
     async fn run_interactive_stops_on_eof() {
         let mut input = Cursor::new(b"");
-        let model = ScriptedModel::new(json!("not used"));
+        let model = ScriptedModel::new(VecDeque::new());
         let skill_loader = EmptySkillLoader {};
         let mut output = Vec::new();
 
@@ -153,15 +135,31 @@ mod tests {
 
     #[tokio::test]
     async fn interactive_reuses_conversation_across_prompts() {
-        let model = ScriptedModel::new(json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "scripted answer",
-                    "tool_calls": null
-                }
-            }]
-        }));
+        let responses = [
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "first reply",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "second reply",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+        ];
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let skill_loader = EmptySkillLoader {};
 
@@ -184,7 +182,7 @@ mod tests {
                 },
                 {
                     "role": "assistant",
-                    "content": "scripted answer",
+                    "content": "first reply",
                     "tool_calls": null
                 },
                 {
@@ -196,21 +194,24 @@ mod tests {
 
         assert_eq!(
             String::from_utf8(output).expect("output should be UTF-8"),
-            "> scripted answer\n> scripted answer\n> "
+            "> first reply\n> second reply\n> "
         );
     }
 
     #[tokio::test]
     async fn interactive_exit_command_does_not_start_another_turn() {
-        let model = ScriptedModel::new(json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "scripted answer",
-                    "tool_calls": null
-                }
-            }]
-        }));
+        let responses = [Done {
+            response: json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "scripted answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let skill_loader = EmptySkillLoader {};
 
@@ -230,15 +231,18 @@ mod tests {
 
     #[tokio::test]
     async fn interactive_quit_command_does_not_start_another_turn() {
-        let model = ScriptedModel::new(json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "scripted answer",
-                    "tool_calls": null
-                }
-            }]
-        }));
+        let responses = [Done {
+            response: json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "scripted answer",
+                        "tool_calls": null
+                    }
+                }]
+            }),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let skill_loader = EmptySkillLoader {};
 
