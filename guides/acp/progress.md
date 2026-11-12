@@ -25,9 +25,10 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [7 — Cancellation](07-cancellation.md) | in progress | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
+| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Not started; baseline on 2026-11-12: 61 test names, green `./premerge.sh`, black-box suite 8 of 8 |
+| [7 — Cancellation](07-cancellation.md) | paused | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
 
-Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
+Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
 ## Session checkpoint — 2026-09-29
 
@@ -850,6 +851,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Cancellation cleanup is still a `todo!`, and the recorded history length is not used yet.
 - Cancellation error handling, session reuse after cancellation, long-running tool-process termination, and final acceptance coverage remain unfinished.
 - Same-session FIFO versus busy-session behavior remains in the hardening backlog.
+
+## Session checkpoint — 2026-11-12 (Task 7 paused; Task 6b cleanup inserted)
+
+### Current understanding
+
+- Task 7 is paused, not abandoned. Its committed work (releasing the turn's cancellation sender after `select!` finishes) stays in `src/acp.rs` and moves with the cleanup.
+- Task 6b changes structure only. Bugs found in the 2026-11-11 review are listed in `06b-cleanup.md` with the milestone that owns each one; they are not fixed in 6b.
+- Step order: test support, then `dispatch` delegation, then the typed request error, then the file split. Each step ends green and is its own commit.
+
+### Source checkpoint
+
+- Branch `master` at `c3c7844` (`Remove WIP test`); no uncommitted source changes.
+- 61 tests pass.
+
+### Exact resume point
+
+1. Save the baseline test-name list (command in `06b-cleanup.md`, "Validation for every step").
+2. Start Step 1: the shared test-support helpers, beginning with the scripted-model decision.
+
+### Unverified or deferred
+
+- After 6b, resume Task 7 at the exact resume point in the 2026-11-10 checkpoint. Line numbers there will have moved.
+- The non-bug backlog (LICENSE, `CLAUDE.md` review, one model client, and others) lives in `06b-cleanup.md`.
 
 ## Validation record
 
