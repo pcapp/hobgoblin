@@ -168,46 +168,21 @@ pub async fn turn<M: Model>(
 mod tests {
     use std::collections::VecDeque;
 
+    use crate::scripted_model::{
+        ScriptedModel,
+        TurnResponse::{self, Done},
+    };
+
     use super::*;
-    use std::sync::Mutex;
 
     fn empty_session() -> Session {
         let cwd = std::env::current_dir().expect("test should have a current directory");
         Session::empty(cwd)
     }
 
-    struct ScriptedModel {
-        responses: Mutex<VecDeque<Value>>,
-        requests: Mutex<Vec<Value>>,
-    }
-
-    impl ScriptedModel {
-        fn new(responses: impl IntoIterator<Item = Value>) -> Self {
-            Self {
-                responses: Mutex::new(responses.into_iter().collect()),
-                requests: Mutex::new(Vec::new()),
-            }
-        }
-    }
-
-    impl Model for ScriptedModel {
-        async fn complete(
-            &self,
-            request: Value,
-        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-            self.requests.lock().unwrap().push(request);
-
-            self.responses
-                .lock()
-                .unwrap()
-                .pop_front()
-                .ok_or_else(|| std::io::Error::other("Scripted model ran out of responses").into())
-        }
-    }
-
     #[tokio::test]
     async fn completed_turn_returns_assistant_text() {
-        let model = ScriptedModel::new([json!({
+        let response = json!({
             "choices": [{
                 "message": {
                     "role": "assistant",
@@ -215,7 +190,11 @@ mod tests {
                     "tool_calls": null
                 }
             }]
-        })]);
+        });
+
+        let model = ScriptedModel::new(VecDeque::from([TurnResponse::Done {
+            response: response.clone(),
+        }]));
 
         let mut session = empty_session();
 
@@ -228,26 +207,32 @@ mod tests {
 
     #[tokio::test]
     async fn second_turn_includes_first_turn_history() {
-        let model = ScriptedModel::new([
-            json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "first answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
-            json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "second answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
-        ]);
+        let responses = [
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "first answer",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "second answer",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+        ];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let mut session = empty_session();
 
@@ -284,26 +269,32 @@ mod tests {
 
     #[tokio::test]
     async fn separate_conversations_do_not_share_messages() {
-        let model = ScriptedModel::new([
-            json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "first answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
-            json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "second answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
-        ]);
+        let responses = [
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "first answer",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+            Done {
+                response: json!({
+                    "choices": [{
+                        "message": {
+                            "role": "assistant",
+                            "content": "second answer",
+                            "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+        ];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let mut first_session = empty_session();
 

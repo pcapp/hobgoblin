@@ -6,6 +6,9 @@ mod terminal;
 mod tools;
 mod wire;
 
+#[cfg(test)]
+mod scripted_model;
+
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use std::{
