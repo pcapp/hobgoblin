@@ -671,7 +671,7 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
+        collections::{HashMap, VecDeque},
         io::Cursor,
         path::PathBuf,
         sync::{Arc, Mutex},
@@ -689,6 +689,66 @@ mod tests {
 
     use uuid::Uuid;
 
+    enum TurnResponse {
+        Done {
+            response: Value,
+        },
+        TimeGated {
+            response: Value,
+            started: Arc<Notify>,
+            released: Arc<Notify>,
+        },
+    }
+
+    struct ScriptedModel {
+        requests: Mutex<Vec<Value>>,
+        // Canned, expected responses
+        responses: Mutex<VecDeque<TurnResponse>>,
+    }
+
+    impl ScriptedModel {
+        fn new(responses: VecDeque<TurnResponse>) -> Self {
+            Self {
+                responses: Mutex::new(responses),
+                requests: Mutex::new(vec![]),
+            }
+        }
+    }
+
+    impl Model for ScriptedModel {
+        async fn complete(
+            &self,
+            request: Value,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            {
+                let mut guard = self.requests.lock().expect("to get the lock");
+                guard.push(request);
+            }
+
+            let response = {
+                let mut guard = self.responses.lock().expect("to get the lock");
+                guard.pop_front().expect("to have a response")
+            };
+
+            println!("Match the response type");
+            match response {
+                Done { response } => Ok(response),
+                TimeGated {
+                    response,
+                    started,
+                    released,
+                } => {
+                    println!("Started");
+                    started.notify_one();
+                    println!("Wait to get released");
+                    released.notified().await;
+
+                    Ok(response)
+                }
+            }
+        }
+    }
+
     struct InertModel;
 
     impl Model for InertModel {
@@ -705,8 +765,9 @@ mod tests {
             ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
             METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, RESOURCE_NOT_FOUND_CODE,
             Request, SessionEntry, SessionId, classify_message, dispatch, get_session,
-            join_text_blocks, parse_prompt_params, run_acp, run_acp_with_model, validate_version,
-            write_frame,
+            join_text_blocks, parse_prompt_params, run_acp, run_acp_with_model,
+            tests::TurnResponse::{Done, TimeGated},
+            validate_version, write_frame,
         },
         agent::Model,
         session::Session,
@@ -1280,6 +1341,75 @@ mod tests {
             .await
             .expect("to join successfully")
             .expect("to shutdown gracefully");
+    }
+
+    #[tokio::test]
+    async fn test_scripted_model_with_immediate_response() {
+        let model_response = serde_json::json!({
+              "choices": [{
+                "message": {
+                  "role": "assistant",
+                  "content": "scripted answer",
+                  "tool_calls": null
+                }
+              }]
+        });
+
+        let model = ScriptedModel::new(VecDeque::from([TurnResponse::Done {
+            response: model_response.clone(),
+        }]));
+        let request = serde_json::json!({
+            "messages": ["what is 1 + 1?"],
+            "model": "hobgoblin/test",
+            "tools": [],
+        });
+
+        let response = model.complete(request).await.expect("a result");
+
+        println!("{:?}", response);
+    }
+
+    #[tokio::test]
+    async fn test_scripted_model_with_time_coordination() {
+        let started = Arc::new(Notify::new());
+        let released = Arc::new(Notify::new());
+
+        let model_response = serde_json::json!({
+              "choices": [{
+                "message": {
+                  "role": "assistant",
+                  "content": "scripted answer",
+                  "tool_calls": []
+                }
+              }]
+        });
+
+        let model = Arc::new(ScriptedModel::new(VecDeque::from([
+            TurnResponse::TimeGated {
+                response: model_response.clone(),
+                started: started.clone(),
+                released: released.clone(),
+            },
+        ])));
+
+        let request = serde_json::json!({
+            "messages": ["what is 1 + 1?"],
+            "model": "hobgoblin/test",
+            "tools": [],
+        });
+
+        let model_clone = model.clone();
+        let task = tokio::spawn(async move { model_clone.complete(request).await });
+
+        started.notified().await;
+
+        released.notify_one();
+        let response = task.await.unwrap();
+        {
+            let guard = model.requests.lock().unwrap();
+            assert_eq!(guard.len(), 1);
+        }
+        println!("{:?}", response);
     }
 
     #[tokio::test]
