@@ -25,7 +25,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [7 — Cancellation](07-cancellation.md) | not started | Cancel a running prompt without reporting an error and leave the session reusable | Draft guide ready for refinement from the completed Task 6 implementation |
+| [7 — Cancellation](07-cancellation.md) | in progress | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
 
 Use `not started`, `in progress`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -821,6 +821,35 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The hardening backlog contains same-session FIFO/busy-session semantics and a deterministic black-box successful prompt case.
 - Spawned prompt-task failures after writer closure remain unsupervised.
 - Task 7 cancellation behavior and its acceptance tests have not started.
+
+## Session checkpoint — 2026-11-10 (Task 7 cancellation plumbing)
+
+### Current understanding
+
+- Cancellation uses a per-turn `tokio::sync::oneshot` channel. The sender lives in separately locked transient state on `SessionEntry`; the spawned prompt task owns the receiver.
+- The prompt task directly races `agent::turn(...)` against the receiver with `tokio::select!`. The branches are futures running in the existing task; spawning either branch would detach work rather than provide cancellation by dropping.
+- `session/cancel` is a JSON-RPC notification, so `read_frames` routes it separately from request `dispatch`. The handler looks up the session, takes the sender from its `Option`, and signals it without holding the cancellation-state mutex.
+- Cancelled turns will roll conversation history back to its pre-turn length. This keeps the current invariant that model history contains only completed turns.
+- When work is explicitly identified as unfinished, review only the part declared ready; do not critique temporary diagnostics, TODOs, expected test gaps, or other unfinished scaffolding.
+
+### Source checkpoint
+
+- Branch `prompt-cancellation` points to `8a4bc7e` (`Race the agent turn and cancellation channel`) and matches `origin/prompt-cancellation`.
+- The working tree has no source changes; `AGENTS.md` is modified outside the Task 7 source work.
+- The prompt task now installs a `oneshot::Sender`, races `agent::turn` against its receiver, and reuses the `Result` returned by the winning turn branch rather than calling `agent::turn` a second time.
+
+### Exact resume point
+
+1. Continue at the `None` branch of the prompt task's `turn_result` match in `src/acp.rs`.
+2. On cancellation, restore conversation history to the recorded pre-turn length and respond to the original prompt with `stopReason: "cancelled"`.
+3. Complete active-sender cleanup on every terminal path, then finish the in-progress cancellation test and run focused validation.
+
+### Unverified or deferred
+
+- No passing validation was reported after commit `8a4bc7e`; the focused retained-conversation test previously exposed and led to fixing a duplicate `agent::turn` call.
+- Cancellation cleanup is still a `todo!`, and the recorded history length is not used yet.
+- Cancellation error handling, session reuse after cancellation, long-running tool-process termination, and final acceptance coverage remain unfinished.
+- Same-session FIFO versus busy-session behavior remains in the hardening backlog.
 
 ## Validation record
 

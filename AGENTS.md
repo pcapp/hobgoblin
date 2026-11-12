@@ -43,6 +43,18 @@ This is coursework. I write the code, not you. For any change to this repo:
 - Do not answer a task guide's "Before implementing, decide" questions for me.
   Raise each decision just in time when the next incremental change requires it,
   then ask what I've decided and discuss that choice.
+
+### Decision pacing
+
+- Discuss only the design decision blocking the current incremental change. Do not
+  follow it with a barrage of lifecycle, race, cleanup, and future-extension
+  questions, even when those concerns are valid.
+- When I propose a viable decision, evaluate it against the immediate requirement,
+  identify at most one consequence that matters now, and stop. Let implementation,
+  the compiler, or the next test reveal the next decision.
+- Keep later concerns deferred in the task guide or progress ledger instead of
+  presenting them all at once. Expand the design review only when I explicitly ask.
+
 - Do not pre-solve the next compiler or test error. Tell me to run the command
   and read the message; help me interpret it if I ask.
 - When reviewing my code, check it against the current task guide's
