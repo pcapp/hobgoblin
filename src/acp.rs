@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
 use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use uuid::Uuid;
 
@@ -731,6 +732,62 @@ mod tests {
             .expect("frame should serialize");
     }
 
+    async fn initialize(
+        client_writer: &mut WriteHalf<DuplexStream>,
+        client_reader: &mut BufReader<ReadHalf<DuplexStream>>,
+    ) {
+        let initialize_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "initialize",
+          "params": {
+              "protocolVersion": 1,
+          }
+        });
+
+        send_frame(client_writer, &initialize_request).await;
+
+        let response = read_frame(client_reader).await;
+
+        validate_version(&response).expect("response should use JSON-RPC 2.0");
+        assert_eq!(response["id"], serde_json::json!(1));
+        assert!(response["error"].is_null());
+        assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
+    }
+
+    async fn create_new_session(
+        client_writer: &mut WriteHalf<DuplexStream>,
+        client_reader: &mut BufReader<ReadHalf<DuplexStream>>,
+        request_id: u64,
+    ) -> String {
+        let new_session_request = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": request_id,
+          "method": "session/new",
+          "params": {
+            "cwd": "/tmp",
+            "mcpServers": []
+          }
+        });
+
+        send_frame(client_writer, &new_session_request).await;
+        let result = read_frame(client_reader).await;
+        validate_version(&result).expect("response should use JSON-RPC 2.0");
+
+        assert_eq!(result["id"], serde_json::json!(request_id));
+        assert!(
+            result.get("error").is_none(),
+            "a success response must not contain an error"
+        );
+
+        let session_id = result["result"]["sessionId"]
+            .as_str()
+            .expect("session/new should return a string session ID");
+        Uuid::parse_str(session_id).expect("a valid UUID");
+
+        session_id.to_string()
+    }
+
     #[test]
     fn omitted_client_capabilities_uses_default() {
         let value = serde_json::json!({
@@ -1142,15 +1199,6 @@ mod tests {
             }
         }
 
-        let initialize_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {
-              "protocolVersion": 1,
-          }
-        });
-
         let (client, agent) = duplex(1024);
         let (agent_reader, agent_writer) = split(agent);
         let (client_reader, mut client_writer) = split(client);
@@ -1167,34 +1215,8 @@ mod tests {
 
         let agent_task = tokio::spawn(run_acp_with_model(reader, agent_writer, model));
 
-        send_frame(&mut client_writer, &initialize_request).await;
-        let result = read_frame(&mut client_reader).await;
-
-        assert_eq!(result["id"], serde_json::json!(1));
-        assert!(
-            result.get("error").is_none(),
-            "a success response must not contain an error"
-        );
-
-        let new_session_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 2,
-          "method": "session/new",
-          "params": {
-            "cwd": "/tmp",
-            "mcpServers": []
-          }
-        });
-
-        send_frame(&mut client_writer, &new_session_request).await;
-        let result = read_frame(&mut client_reader).await;
-
-        assert_eq!(result["id"], serde_json::json!(2));
-        assert!(
-            result.get("error").is_none(),
-            "a success response must not contain an error"
-        );
-        let session_id = result["result"]["sessionId"].clone();
+        initialize(&mut client_writer, &mut client_reader).await;
+        let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
 
         let prompt_request = serde_json::json!({
           "jsonrpc": "2.0",
@@ -1215,25 +1237,7 @@ mod tests {
 
         started.notified().await;
 
-        let second_session_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 4,
-          "method": "session/new",
-          "params": {
-            "cwd": "/tmp",
-            "mcpServers": []
-          }
-        });
-
-        send_frame(&mut client_writer, &second_session_request).await;
-
-        let result = read_frame(&mut client_reader).await;
-        assert_eq!(result["id"], 4);
-        let second_session_id = result["result"]["sessionId"]
-            .as_str()
-            .expect("session/new sshould return a valid session ID");
-        Uuid::parse_str(second_session_id).expect("a valid session ID");
-        assert!(result["error"].is_null());
+        let _ = create_new_session(&mut client_writer, &mut client_reader, 4).await;
 
         release.notify_one();
 
@@ -1468,44 +1472,8 @@ mod tests {
 
         let agent_task = tokio::spawn(run_acp_with_model(agent_input, agent_output, model));
 
-        let initialize_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {
-              "protocolVersion": 1,
-          }
-        });
-
-        send_frame(&mut client_writer, &initialize_request).await;
-
-        let response = read_frame(&mut client_reader).await;
-
-        validate_version(&response).expect("response should use JSON-RPC 2.0");
-        assert_eq!(response["id"], serde_json::json!(1));
-        assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
-
-        // Handle session/new
-        let new_session_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 2,
-          "method": "session/new",
-          "params": {
-            "cwd": "/tmp",
-            "mcpServers": []
-          }
-        });
-
-        send_frame(&mut client_writer, &new_session_request).await;
-        let result = read_frame(&mut client_reader).await;
-        validate_version(&result).expect("response should use JSON-RPC 2.0");
-
-        assert_eq!(result["id"], serde_json::json!(2));
-        assert!(
-            result.get("error").is_none(),
-            "a success response must not contain an error"
-        );
-        let session_id = result["result"]["sessionId"].clone();
+        initialize(&mut client_writer, &mut client_reader).await;
+        let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
 
         // Send a prompt and verify the scripted model started processing.
         let prompt_request = serde_json::json!({
