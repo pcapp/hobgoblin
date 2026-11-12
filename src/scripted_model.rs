@@ -67,6 +67,16 @@ impl Model for ScriptedModel {
     }
 }
 
+impl Model for Arc<ScriptedModel> {
+    fn complete(
+        &self,
+        request: Value,
+    ) -> impl std::future::Future<Output = Result<Value, Box<dyn std::error::Error + Send + Sync>>> + Send
+    {
+        self.as_ref().complete(request)
+    }
+}
+
 #[tokio::test]
 async fn test_scripted_model_with_immediate_response() {
     let model_response = serde_json::json!({

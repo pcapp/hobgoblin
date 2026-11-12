@@ -671,10 +671,10 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
 #[cfg(test)]
 mod tests {
     use std::{
-        collections::HashMap,
+        collections::{HashMap, VecDeque},
         io::Cursor,
         path::PathBuf,
-        sync::{Arc, Mutex},
+        sync::Arc,
         time::Duration,
     };
 
@@ -709,6 +709,10 @@ mod tests {
             write_frame,
         },
         agent::Model,
+        scripted_model::{
+            ScriptedModel,
+            TurnResponse::{Done, TimeGated},
+        },
         session::Session,
     };
 
@@ -1181,41 +1185,28 @@ mod tests {
 
     #[tokio::test]
     async fn session_prompt_execution_does_not_block_reader() {
-        struct ScriptedModel {
-            started: Arc<Notify>,
-            release: Arc<Notify>,
-        }
+        let started = Arc::new(Notify::new());
+        let released = Arc::new(Notify::new());
+        let responses = [TimeGated {
+            response: serde_json::json!({
+                  "choices": [{
+                    "message": {
+                      "role": "assistant",
+                      "content": "scripted answer",
+                      "tool_calls": null
+                    }
+                  }]
+            }),
+            started: started.clone(),
+            released: released.clone(),
+        }];
 
-        impl Model for ScriptedModel {
-            async fn complete(
-                &self,
-                _request: Value,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                self.started.notify_one();
-                self.release.notified().await;
-                Ok(serde_json::json!({
-                      "choices": [{
-                        "message": {
-                          "role": "assistant",
-                          "content": "scripted answer",
-                          "tool_calls": null
-                        }
-                      }]
-                }))
-            }
-        }
+        let model = ScriptedModel::new(VecDeque::from(responses));
 
         let (client, agent) = duplex(1024);
         let (agent_reader, agent_writer) = split(agent);
         let (client_reader, mut client_writer) = split(client);
         let reader = BufReader::new(agent_reader);
-
-        let started = Arc::new(Notify::new());
-        let release = Arc::new(Notify::new());
-        let model = ScriptedModel {
-            started: started.clone(),
-            release: release.clone(),
-        };
 
         let mut client_reader = BufReader::new(client_reader);
 
@@ -1245,7 +1236,7 @@ mod tests {
 
         let _ = create_new_session(&mut client_writer, &mut client_reader, 4).await;
 
-        release.notify_one();
+        released.notify_one();
 
         let result = read_frame(&mut client_reader).await;
 
@@ -1284,25 +1275,19 @@ mod tests {
 
     #[tokio::test]
     async fn session_prompt_runs_model_and_retains_conversation() {
-        struct ScriptedModel;
-        impl Model for ScriptedModel {
-            async fn complete(
-                &self,
-                _request: Value,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                Ok(serde_json::json!({
-                      "choices": [{
-                        "message": {
-                          "role": "assistant",
-                          "content": "scripted answer",
-                          "tool_calls": null
-                        }
-                      }]
+        let responses = [Done {
+            response: serde_json::json!({
+                  "choices": [{
+                    "message": {
+                      "role": "assistant",
+                      "content": "scripted answer",
+                      "tool_calls": null
+                    }
+                  }]
 
-                }))
-            }
-        }
-
+            }),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
         let session_id = "00000000-0000-0000-0000-000000000001";
         let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
 
@@ -1328,7 +1313,7 @@ mod tests {
           }
         });
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
-        let model = Arc::new(ScriptedModel);
+        let model = Arc::new(model);
         let (sender, mut receiver) = mpsc::channel(2);
 
         let dispatch_result = dispatch(request, &mut state, &model, &sender)
@@ -1399,68 +1384,45 @@ mod tests {
 
     #[tokio::test]
     async fn should_cancel_active_prompts() {
-        let messages = Arc::new(Mutex::new(Vec::new()));
-
-        struct ScriptedModel {
-            started: Arc<Notify>,
-            release: Arc<Notify>,
-            turn_count: Arc<Mutex<i32>>,
-            messages: Arc<Mutex<Vec<Value>>>,
-        }
-
-        impl Model for ScriptedModel {
-            async fn complete(
-                &self,
-                request: Value,
-            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-                {
-                    let mut guard = self.messages.lock().unwrap();
-                    guard.push(request["messages"].clone());
-                }
-
-                let turn_number = {
-                    let mut guard = self.turn_count.lock().expect("to get the lock");
-                    *guard += 1;
-                    *guard
-                };
-
-                if turn_number == 1 {
-                    Ok(serde_json::json!({
-                          "choices": [{
-                            "message": {
-                              "role": "assistant",
-                              "content": "first",
-                              "tool_calls": null
-                            }
-                          }]
-                    }))
-                } else if turn_number == 2 {
-                    self.started.notify_one();
-                    self.release.notified().await;
-                    Ok(serde_json::json!({
-                          "choices": [{
-                            "message": {
-                              "role": "assistant",
-                              "content": "second",
-                              "tool_calls": null
-                            }
-                          }]
-                    }))
-                } else if turn_number == 3 {
-                    Ok(serde_json::json!({
-                          "choices": [{
-                            "message": {
-                              "role": "assistant",
-                              "content": "third",
-                              "tool_calls": null
-                            }
-                          }]
-                    }))
-                } else {
-                    panic!("Should not get here.");
-                }
-            }
-        }
+        let started = Arc::new(Notify::new());
+        let released = Arc::new(Notify::new());
+        let responses = [
+            Done {
+                response: serde_json::json!({
+                    "choices": [{
+                        "message": {
+                        "role": "assistant",
+                        "content": "first",
+                        "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+            TimeGated {
+                response: serde_json::json!({
+                    "choices": [{
+                        "message": {
+                        "role": "assistant",
+                        "content": "second",
+                        "tool_calls": null
+                        }
+                    }]
+                }),
+                started: started.clone(),
+                released: released.clone(),
+            },
+            Done {
+                response: serde_json::json!({
+                    "choices": [{
+                        "message": {
+                        "role": "assistant",
+                        "content": "third",
+                        "tool_calls": null
+                        }
+                    }]
+                }),
+            },
+        ];
 
         let (client_end, agent_end) = duplex(1024);
         let (client_read, mut client_writer) = tokio::io::split(client_end);
@@ -1471,16 +1433,12 @@ mod tests {
 
         let mut client_reader = tokio::io::BufReader::new(client_read);
 
-        let started = Arc::new(Notify::new());
-        let release = Arc::new(Notify::new());
-        let model = ScriptedModel {
-            started: started.clone(),
-            release: release.clone(),
-            turn_count: Arc::new(Mutex::new(0)),
-            messages: messages.clone(),
-        };
+        let model = Arc::new(ScriptedModel::new(VecDeque::from(responses)));
 
-        let agent_task = tokio::spawn(run_acp_with_model(agent_input, agent_output, model));
+        let model_clone = model.clone();
+        let agent_task = tokio::spawn(async move {
+            run_acp_with_model(agent_input, agent_output, model_clone).await
+        });
 
         initialize(&mut client_writer, &mut client_reader).await;
         let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
@@ -1608,13 +1566,13 @@ mod tests {
         assert!(response["error"].is_null());
 
         let (num_messages, third_request) = {
-            let guard = messages.lock().unwrap();
+            let guard = model.requests.lock().unwrap();
             (guard.len(), guard.get(2).unwrap().clone())
         };
 
         assert_eq!(3, num_messages);
         assert_eq!(
-            third_request,
+            third_request["messages"],
             serde_json::json!([
                 {"role": "user", "content": "first question"},
                 {"role": "assistant", "content": "first", "tool_calls": null},
