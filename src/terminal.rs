@@ -73,6 +73,7 @@ mod tests {
         scripted_model::{ScriptedModel, TurnResponse::Done},
         skills::SkillLoader,
         terminal::{run_interactive, run_once},
+        test_messages::assistant_reply,
     };
 
     struct EmptySkillLoader {}
@@ -89,15 +90,7 @@ mod tests {
     #[tokio::test]
     async fn runs_once_writes_one_turn_answer_to_output() {
         let responses = [Done {
-            response: json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "scripted answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
+            response: assistant_reply("scripted answer"),
         }];
         let model = ScriptedModel::new(VecDeque::from(responses));
 
@@ -137,26 +130,10 @@ mod tests {
     async fn interactive_reuses_conversation_across_prompts() {
         let responses = [
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "first reply",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("first reply"),
             },
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "second reply",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("second reply"),
             },
         ];
         let model = ScriptedModel::new(VecDeque::from(responses));
@@ -201,15 +178,7 @@ mod tests {
     #[tokio::test]
     async fn interactive_exit_command_does_not_start_another_turn() {
         let responses = [Done {
-            response: json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "scripted answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
+            response: assistant_reply("scripted answer"),
         }];
         let model = ScriptedModel::new(VecDeque::from(responses));
 
@@ -232,15 +201,7 @@ mod tests {
     #[tokio::test]
     async fn interactive_quit_command_does_not_start_another_turn() {
         let responses = [Done {
-            response: json!({
-                "choices": [{
-                    "message": {
-                        "role": "assistant",
-                        "content": "scripted answer",
-                        "tool_calls": null
-                    }
-                }]
-            }),
+            response: assistant_reply("scripted answer"),
         }];
         let model = ScriptedModel::new(VecDeque::from(responses));
 

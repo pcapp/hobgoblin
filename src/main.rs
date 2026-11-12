@@ -9,6 +9,9 @@ mod wire;
 #[cfg(test)]
 mod scripted_model;
 
+#[cfg(test)]
+mod test_messages;
+
 use async_openai::{Client, config::OpenAIConfig};
 use clap::Parser;
 use std::{

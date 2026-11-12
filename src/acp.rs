@@ -714,6 +714,7 @@ mod tests {
             TurnResponse::{Done, TimeGated},
         },
         session::Session,
+        test_messages::assistant_reply,
     };
 
     async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
@@ -1188,15 +1189,7 @@ mod tests {
         let started = Arc::new(Notify::new());
         let released = Arc::new(Notify::new());
         let responses = [TimeGated {
-            response: serde_json::json!({
-                  "choices": [{
-                    "message": {
-                      "role": "assistant",
-                      "content": "scripted answer",
-                      "tool_calls": null
-                    }
-                  }]
-            }),
+            response: assistant_reply("scripted answer"),
             started: started.clone(),
             released: released.clone(),
         }];
@@ -1276,16 +1269,7 @@ mod tests {
     #[tokio::test]
     async fn session_prompt_runs_model_and_retains_conversation() {
         let responses = [Done {
-            response: serde_json::json!({
-                  "choices": [{
-                    "message": {
-                      "role": "assistant",
-                      "content": "scripted answer",
-                      "tool_calls": null
-                    }
-                  }]
-
-            }),
+            response: assistant_reply("scripted answer"),
         }];
         let model = ScriptedModel::new(VecDeque::from(responses));
         let session_id = "00000000-0000-0000-0000-000000000001";
@@ -1324,7 +1308,7 @@ mod tests {
 
         assert!(
             dispatch_result.is_none(),
-            "spawned prompthandling should send through the writer channel"
+            "spawned prompt handling should send through the writer channel"
         );
 
         let update = receiver
@@ -1388,39 +1372,15 @@ mod tests {
         let released = Arc::new(Notify::new());
         let responses = [
             Done {
-                response: serde_json::json!({
-                    "choices": [{
-                        "message": {
-                        "role": "assistant",
-                        "content": "first",
-                        "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("first"),
             },
             TimeGated {
-                response: serde_json::json!({
-                    "choices": [{
-                        "message": {
-                        "role": "assistant",
-                        "content": "second",
-                        "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("second"),
                 started: started.clone(),
                 released: released.clone(),
             },
             Done {
-                response: serde_json::json!({
-                    "choices": [{
-                        "message": {
-                        "role": "assistant",
-                        "content": "third",
-                        "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("third"),
             },
         ];
 

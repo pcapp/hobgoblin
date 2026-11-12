@@ -168,9 +168,12 @@ pub async fn turn<M: Model>(
 mod tests {
     use std::collections::VecDeque;
 
-    use crate::scripted_model::{
-        ScriptedModel,
-        TurnResponse::{self, Done},
+    use crate::{
+        scripted_model::{
+            ScriptedModel,
+            TurnResponse::{self, Done},
+        },
+        test_messages::assistant_reply,
     };
 
     use super::*;
@@ -182,15 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn completed_turn_returns_assistant_text() {
-        let response = json!({
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "scripted answer",
-                    "tool_calls": null
-                }
-            }]
-        });
+        let response = assistant_reply("scripted answer");
 
         let model = ScriptedModel::new(VecDeque::from([TurnResponse::Done {
             response: response.clone(),
@@ -209,26 +204,10 @@ mod tests {
     async fn second_turn_includes_first_turn_history() {
         let responses = [
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "first answer",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("first answer"),
             },
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "second answer",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("second answer"),
             },
         ];
 
@@ -271,26 +250,10 @@ mod tests {
     async fn separate_conversations_do_not_share_messages() {
         let responses = [
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "first answer",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("first answer"),
             },
             Done {
-                response: json!({
-                    "choices": [{
-                        "message": {
-                            "role": "assistant",
-                            "content": "second answer",
-                            "tool_calls": null
-                        }
-                    }]
-                }),
+                response: assistant_reply("second answer"),
             },
         ];
 
