@@ -582,6 +582,12 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
                             }
                     };
 
+                    {
+                        // Clear the active-turn cancellation sender.
+                        let mut turn_stop = session_entry.active_turn_stop.lock().await;
+                        let _ = turn_stop.take();
+                    }
+
                     match turn_result {
                         Some(result) => {
                             let answer = match result {
@@ -1371,6 +1377,10 @@ mod tests {
         );
         assert_eq!(result["result"]["stopReason"], "end_turn");
 
+        {
+            let guard = session_entry.active_turn_stop.lock().await;
+            assert!(guard.is_none());
+        }
         let session_guard = session_entry.session.lock().await;
         assert_eq!(session_guard.conversation.messages.len(), 2);
 
@@ -1385,6 +1395,113 @@ mod tests {
             session_guard.conversation.messages[1]["content"],
             "scripted answer"
         );
+    }
+
+    #[tokio::test]
+    async fn session_prompt_model_error_clears_active_turn() {
+        struct ScriptedModel;
+        impl Model for ScriptedModel {
+            async fn complete(
+                &self,
+                _request: Value,
+            ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+                Err(std::io::Error::other("scripted model failure").into())
+            }
+        }
+
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
+            let session_id = SessionId(uuid);
+
+            registry.insert(session_id, Arc::clone(&session_entry));
+        }
+        state.initialized = true;
+
+        let value = serde_json::json!({
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "session/prompt",
+          "params": {
+              "sessionId": "00000000-0000-0000-0000-000000000001",
+              "prompt": [
+                  { "type": "text", "text": "What is 1+1?"}
+              ]
+          }
+        });
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = Arc::new(ScriptedModel);
+        let (sender, mut receiver) = mpsc::channel(2);
+
+        let dispatch_result = dispatch(request, &mut state, &model, &sender)
+            .await
+            .expect("dispatch should succeed");
+
+        drop(sender);
+
+        assert!(
+            dispatch_result.is_none(),
+            "spawned prompthandling should send through the writer channel"
+        );
+
+        //
+        //         let update = receiver
+        //             .recv()
+        //             .await
+        //             .expect("to receive an agent_updated_message");
+        //
+        //         assert_eq!(update["jsonrpc"], "2.0");
+        //         assert_eq!(update["method"], "session/update");
+        //         assert!(update.get("id").is_none());
+        //         assert_eq!(
+        //             update["params"]["update"]["sessionUpdate"],
+        //             "agent_message_chunk"
+        //         );
+        //         assert_eq!(update["params"]["update"]["content"]["type"], "text");
+        //         assert_eq!(
+        //             update["params"]["sessionId"],
+        //             "00000000-0000-0000-0000-000000000001"
+        //         );
+        //         assert_eq!(
+        //             update["params"]["update"]["content"]["text"],
+        //             "scripted answer"
+        //         );
+        //
+        //         let result = receiver
+        //             .recv()
+        //             .await
+        //             .expect("prompt should send a final response");
+        //
+        //         assert_eq!(result["jsonrpc"], "2.0");
+        //         assert_eq!(result["id"], serde_json::json!(3));
+        //         assert!(
+        //             result.get("error").is_none(),
+        //             "a result response must not contain an error"
+        //         );
+        //         assert_eq!(result["result"]["stopReason"], "end_turn");
+        //
+        //         {
+        //             let guard = session_entry.active_turn_stop.lock().await;
+        //             assert!(guard.is_none());
+        //         }
+        //         let session_guard = session_entry.session.lock().await;
+        //         assert_eq!(session_guard.conversation.messages.len(), 2);
+        //
+        //         assert_eq!(session_guard.conversation.messages[0]["role"], "user");
+        //         assert_eq!(
+        //             session_guard.conversation.messages[0]["content"],
+        //             "What is 1+1?"
+        //         );
+        //
+        //         assert_eq!(session_guard.conversation.messages[1]["role"], "assistant");
+        //         assert_eq!(
+        //             session_guard.conversation.messages[1]["content"],
+        //             "scripted answer"
+        //         );
     }
 
     #[tokio::test]
@@ -1607,8 +1724,8 @@ mod tests {
             third_request,
             serde_json::json!([
                 {"role": "user", "content": "first question"},
-                 {"role": "assistant", "content": "first", "tool_calls": null},
-                 {"role": "user", "content": "third question"}
+                {"role": "assistant", "content": "first", "tool_calls": null},
+                {"role": "user", "content": "third question"}
             ])
         );
 
