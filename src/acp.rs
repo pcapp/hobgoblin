@@ -714,7 +714,10 @@ mod tests {
             TurnResponse::{Done, TimeGated},
         },
         session::Session,
-        test_messages::{assistant_reply, make_prompt_request},
+        test_messages::{
+            assistant_reply, make_agent_message_chunk, make_cancel_notification,
+            make_prompt_request,
+        },
     };
 
     async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
@@ -1212,19 +1215,7 @@ mod tests {
         let result = read_frame(&mut client_reader).await;
 
         assert_eq!(result["params"]["sessionId"], session_id);
-        let expected_response = serde_json::json!({
-            "jsonrpc":"2.0",
-            "method":"session/update",
-            "params":{
-                "sessionId":session_id,
-                "update":{
-                    "content":{
-                        "text":"scripted answer",
-                        "type":"text"},
-                    "sessionUpdate":"agent_message_chunk"
-                }
-            }
-        });
+        let expected_response = make_agent_message_chunk(&session_id, "scripted answer");
 
         assert_eq!(expected_response, result);
 
@@ -1263,17 +1254,8 @@ mod tests {
         }
         state.initialized = true;
 
-        let value = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 3,
-          "method": "session/prompt",
-          "params": {
-              "sessionId": "00000000-0000-0000-0000-000000000001",
-              "prompt": [
-                  { "type": "text", "text": "What is 1+1?"}
-              ]
-          }
-        });
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let value = make_prompt_request(3, session_id, "What is 1+1?");
         let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
         let model = Arc::new(model);
         let (sender, mut receiver) = mpsc::channel(2);
@@ -1388,19 +1370,7 @@ mod tests {
         let response = read_frame(&mut client_reader).await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
-        let expected_response = serde_json::json!({
-            "jsonrpc":"2.0",
-            "method":"session/update",
-            "params":{
-                "sessionId":session_id,
-                "update":{
-                    "content":{
-                        "text":"first",
-                        "type":"text"},
-                    "sessionUpdate":"agent_message_chunk"
-                }
-            }
-        });
+        let expected_response = make_agent_message_chunk(&session_id, "first");
 
         assert_eq!(expected_response, response);
 
@@ -1416,14 +1386,7 @@ mod tests {
 
         started.notified().await;
 
-        // Now, cancel the prompt.
-        let cancel_notification = serde_json::json!({
-          "jsonrpc": "2.0",
-          "method": "session/cancel",
-          "params": {
-            "sessionId": session_id
-          }
-        });
+        let cancel_notification = make_cancel_notification(&session_id);
 
         send_frame(&mut client_writer, &cancel_notification).await;
         let result = read_frame(&mut client_reader).await;
@@ -1437,38 +1400,13 @@ mod tests {
         assert_eq!(result["result"]["stopReason"], "cancelled");
 
         // Send the third prompt and check the history doesn't include the second cancelled prompt.
-        let third_prompt_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 5,
-          "method": "session/prompt",
-          "params": {
-            "sessionId": session_id,
-            "prompt": [
-              {
-                "type": "text",
-                "text": "third question"
-              }
-            ]
-          }
-        });
+        let third_prompt_request = make_prompt_request(5, &session_id, "third question");
 
         send_frame(&mut client_writer, &third_prompt_request).await;
         let response = read_frame(&mut client_reader).await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
-        let expected_response = serde_json::json!({
-            "jsonrpc":"2.0",
-            "method":"session/update",
-            "params":{
-                "sessionId":session_id,
-                "update":{
-                    "content":{
-                        "text":"third",
-                        "type":"text"},
-                    "sessionUpdate":"agent_message_chunk"
-                }
-            }
-        });
+        let expected_response = make_agent_message_chunk(&session_id, "third");
 
         assert_eq!(expected_response, response);
         let response = read_frame(&mut client_reader).await;

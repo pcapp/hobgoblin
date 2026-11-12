@@ -28,3 +28,29 @@ pub fn make_prompt_request(id: u64, session_id: &str, prompt: &str) -> Value {
       }
     })
 }
+
+pub fn make_agent_message_chunk(session_id: &str, text: &str) -> Value {
+    serde_json::json!({
+        "jsonrpc":"2.0",
+        "method":"session/update",
+        "params":{
+            "sessionId":session_id,
+            "update":{
+                "content":{
+                    "text": text,
+                    "type": "text"},
+                "sessionUpdate":"agent_message_chunk"
+            }
+        }
+    })
+}
+
+pub fn make_cancel_notification(session_id: &str) -> Value {
+    serde_json::json!({
+      "jsonrpc": "2.0",
+      "method": "session/cancel",
+      "params": {
+        "sessionId": session_id
+      }
+    })
+}
