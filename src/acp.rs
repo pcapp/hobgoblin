@@ -546,7 +546,7 @@ async fn handle_prompt<M: Model + Send + Sync + 'static>(
     state: &mut ConnectionState,
     model: &Arc<M>,
     sender: &mpsc::Sender<Value>,
-) -> Result<Option<SuccessResponse<Value>>, ErrorResponse> {
+) -> Result<(), ErrorResponse> {
     let value = request.params.unwrap_or(Value::Null);
     let (session_id, prompt) = match parse_prompt_params(Some(value)) {
         Ok(params) => params,
@@ -562,100 +562,118 @@ async fn handle_prompt<M: Model + Send + Sync + 'static>(
             let sender = sender.clone();
 
             tokio::spawn(async move {
-                let mut session_guard = session_entry.session.lock().await;
-                let history_length = session_guard.conversation.messages.len();
-                let (stop_sender, stop_receiver) = oneshot::channel::<()>();
-
-                {
-                    let mut turn_stop = session_entry.active_turn_stop.lock().await;
-                    turn_stop.replace(stop_sender);
-                }
-
-                let turn_result = tokio::select! {
-                    result = agent::turn(model.as_ref(), &mut session_guard, &prompt) => {
-                            Some(result)
-                        }
-
-                        _ = stop_receiver => {
-                            None
-                        }
-                };
-
-                {
-                    // Clear the active-turn cancellation sender.
-                    let mut turn_stop = session_entry.active_turn_stop.lock().await;
-                    let _ = turn_stop.take();
-                }
-
-                match turn_result {
-                    Some(result) => {
-                        let answer = match result {
-                            Ok(answer) => answer,
-                            Err(error) => {
-                                let message = format!("Request {} failed: {error}", request.id);
-
-                                let response =
-                                    ErrorResponse::new(request.id, INTERNAL_ERROR_CODE, &message);
-                                sender.send(serde_json::to_value(response)?).await?;
-
-                                return Ok(());
-                            }
-                        };
-
-                        let session_update = serde_json::json!({
-                            "jsonrpc": "2.0",
-                            "method": "session/update",
-                            "params": {
-                                "sessionId": &session_id.0.to_string(),
-                                "update": {
-                                    "content": {
-                                        "type": "text",
-                                        "text": answer
-                                    },
-                                    "sessionUpdate": "agent_message_chunk",
-                                }
-                            }
-                        });
-
-                        sender.send(session_update).await?;
-
-                        let response = SuccessResponse {
-                            jsonrpc: String::from("2.0"),
-                            id: request.id,
-                            result: serde_json::json!({
-                                "stopReason": "end_turn"
-                            }),
-                        };
-
-                        sender.send(serde_json::to_value(response)?).await?;
-
-                        Ok::<(), AcpError>(())
-                    }
-                    None => {
-                        session_guard.conversation.messages.truncate(history_length);
-
-                        let response = SuccessResponse {
-                            jsonrpc: String::from("2.0"),
-                            id: request.id,
-                            result: serde_json::json!({
-                                "stopReason": "cancelled"
-                            }),
-                        };
-
-                        sender.send(serde_json::to_value(response)?).await?;
-
-                        Ok::<(), AcpError>(())
-                    }
-                }
+                issue_prompt(
+                    request.id,
+                    &model,
+                    &sender,
+                    session_entry,
+                    &prompt,
+                    session_id,
+                )
+                .await
             });
 
-            Ok(None)
+            Ok(())
         }
         None => {
             let response = ErrorResponse::resource_not_found(request.id);
             Err(response)
         }
     };
+}
+
+async fn issue_prompt<M: Model + Send + Sync + 'static>(
+    request_id: Value,
+    model: &Arc<M>,
+    sender: &mpsc::Sender<Value>,
+    session_entry: Arc<SessionEntry>,
+    prompt: &str,
+    session_id: SessionId,
+) -> Result<(), AcpError> {
+    let mut session_guard = session_entry.session.lock().await;
+    let history_length = session_guard.conversation.messages.len();
+    let (stop_sender, stop_receiver) = oneshot::channel::<()>();
+
+    {
+        let mut turn_stop = session_entry.active_turn_stop.lock().await;
+        turn_stop.replace(stop_sender);
+    }
+
+    let turn_result = tokio::select! {
+        result = agent::turn(model.as_ref(), &mut session_guard, prompt) => {
+                Some(result)
+            }
+
+            _ = stop_receiver => {
+                None
+            }
+    };
+
+    {
+        // Clear the active-turn cancellation sender.
+        let mut turn_stop = session_entry.active_turn_stop.lock().await;
+        let _ = turn_stop.take();
+    }
+
+    match turn_result {
+        Some(result) => {
+            let answer = match result {
+                Ok(answer) => answer,
+                Err(error) => {
+                    let message = format!("Request {} failed: {error}", request_id);
+
+                    let response = ErrorResponse::new(request_id, INTERNAL_ERROR_CODE, &message);
+                    sender.send(serde_json::to_value(response)?).await?;
+
+                    return Ok(());
+                }
+            };
+
+            let session_update = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "sessionId": &session_id.0.to_string(),
+                    "update": {
+                        "content": {
+                            "type": "text",
+                            "text": answer
+                        },
+                        "sessionUpdate": "agent_message_chunk",
+                    }
+                }
+            });
+
+            sender.send(session_update).await?;
+
+            let response = SuccessResponse {
+                jsonrpc: String::from("2.0"),
+                id: request_id,
+                result: serde_json::json!({
+                    "stopReason": "end_turn"
+                }),
+            };
+
+            sender.send(serde_json::to_value(response)?).await?;
+
+            Ok::<(), AcpError>(())
+        }
+        None => {
+            session_guard.conversation.messages.truncate(history_length);
+
+            let response = SuccessResponse {
+                jsonrpc: String::from("2.0"),
+                id: request_id,
+                result: serde_json::json!({
+                    "stopReason": "cancelled"
+                }),
+            };
+
+            sender.send(serde_json::to_value(response)?).await?;
+
+            Ok::<(), AcpError>(())
+        }
+    }
 }
 
 async fn dispatch_request<M: Model + Send + Sync + 'static>(
@@ -689,7 +707,7 @@ async fn dispatch_request<M: Model + Send + Sync + 'static>(
         Ok(Some(result))
     } else if request.method == "session/prompt" {
         let result = match handle_prompt(request, state, model, sender).await {
-            Ok(_) => None,
+            Ok(()) => None,
             Err(err) => Some(serde_json::to_value(err)?),
         };
 
