@@ -1,4 +1,5 @@
 mod session_registry;
+mod transport;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -7,11 +8,12 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite};
 
 use tokio::sync::{RwLock, mpsc, oneshot};
 
 use crate::acp::session_registry::{SessionEntry, SessionId, SessionRegistry, get_session};
+use crate::acp::transport::write_frames;
 use crate::agent::{self, Model, OpenRouterModel};
 use crate::session::Session;
 
@@ -272,27 +274,6 @@ fn validate_version(value: &Value) -> Result<(), AcpError> {
         )
         .into()),
     }
-}
-
-async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, value: &Value) -> Result<(), AcpError> {
-    let mut frame = serde_json::to_vec(value)?;
-    frame.push(b'\n');
-
-    writer.write_all(&frame).await?;
-    writer.flush().await?;
-
-    Ok(())
-}
-
-async fn write_frames<W: AsyncWrite + Unpin + Send>(
-    mut writer: W,
-    mut receiver: mpsc::Receiver<Value>,
-) -> Result<(), AcpError> {
-    while let Some(value) = receiver.recv().await {
-        write_frame(&mut writer, &value).await?;
-    }
-
-    Ok(())
 }
 
 async fn read_frames<R, M>(
@@ -726,7 +707,7 @@ mod tests {
             InitializeParams, MAX_FRAME_BYTES, METHOD_NOT_FOUND_CODE, MessageKind,
             PromptContentBlock, RESOURCE_NOT_FOUND_CODE, Request, SessionEntry, SessionId,
             classify_message, dispatch_request, get_session, join_text_blocks, parse_prompt_params,
-            run_acp, run_acp_with_model, validate_version, write_frame,
+            run_acp, run_acp_with_model, transport::write_frame, validate_version,
         },
         agent::Model,
         scripted_model::{
