@@ -1,3 +1,4 @@
+mod session_registry;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -8,45 +9,13 @@ use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
-use uuid::Uuid;
+use tokio::sync::{RwLock, mpsc, oneshot};
 
+use crate::acp::session_registry::{SessionEntry, SessionId, SessionRegistry, get_session};
 use crate::agent::{self, Model, OpenRouterModel};
 use crate::session::Session;
 
 type AcpError = Box<dyn Error + Send + Sync>;
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-struct SessionId(Uuid);
-
-impl SessionId {
-    fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-}
-
-struct SessionEntry {
-    session: Mutex<Session>,
-    active_turn_stop: Mutex<Option<oneshot::Sender<()>>>,
-}
-
-impl SessionEntry {
-    fn new(session: Session) -> Self {
-        Self {
-            session: Mutex::new(session),
-            active_turn_stop: Mutex::new(None),
-        }
-    }
-}
-
-type SessionHandle = Arc<SessionEntry>;
-type SessionRegistry = Arc<RwLock<HashMap<SessionId, SessionHandle>>>;
-
-async fn get_session(registry: &SessionRegistry, session_id: &SessionId) -> Option<SessionHandle> {
-    let guard = registry.read().await;
-    guard.get(session_id).cloned()
-}
 
 const INVALID_PARAMS_CODE: i32 = -32602;
 const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32600;
