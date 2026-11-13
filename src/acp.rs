@@ -1,9 +1,9 @@
 mod message_handling;
+mod schema;
 mod session_registry;
 mod transport;
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,8 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite};
 use tokio::sync::{RwLock, mpsc};
 
 use crate::acp::message_handling::dispatch_request;
-use crate::acp::session_registry::{SessionId, SessionRegistry, get_session};
+use crate::acp::schema::CancelParams;
+use crate::acp::session_registry::{SessionRegistry, get_session};
 use crate::acp::transport::write_frames;
 use crate::agent::{Model, OpenRouterModel};
 
@@ -47,12 +48,6 @@ struct Notification<T> {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CancelParams {
-    session_id: SessionId,
-}
-
-#[derive(Debug, Deserialize)]
 struct Request<T> {
     id: Value,
 
@@ -61,79 +56,6 @@ struct Request<T> {
 
     #[allow(dead_code)]
     params: Option<T>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-struct InitializeParams {
-    protocol_version: u16,
-
-    client_info: Option<Implementation>,
-
-    #[serde(default)]
-    client_capabilities: ClientCapabilities,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct NewSessionParams {
-    cwd: PathBuf,
-
-    #[allow(
-        dead_code,
-        reason = "ACP requires mcpServers, but MCP support is intentionally deferred"
-    )]
-    mcp_servers: Vec<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PromptParams {
-    session_id: SessionId,
-    prompt: Vec<PromptContentBlock>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-enum PromptContentBlock {
-    Text {
-        text: String,
-    },
-    #[serde(other)]
-    Unsupported,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-#[allow(dead_code)]
-struct FileSystemCapabilities {
-    read_text_file: bool,
-    write_text_file: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[allow(dead_code)]
-#[serde(default)]
-struct AuthCapabilities {
-    terminal: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-#[allow(dead_code)]
-struct ClientCapabilities {
-    fs: FileSystemCapabilities,
-    auth: AuthCapabilities,
-    terminal: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct Implementation {
-    name: String,
-    title: Option<String>,
-    version: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -415,10 +337,11 @@ mod tests {
 
     use crate::{
         acp::{
-            ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
-            METHOD_NOT_FOUND_CODE, MessageKind, Request, SessionId, classify_message,
-            dispatch_request, run_acp, run_acp_with_model, session_registry::SessionEntry,
-            transport::write_frame, validate_version,
+            ConnectionState, INVALID_PARAMS_CODE, MAX_FRAME_BYTES, METHOD_NOT_FOUND_CODE,
+            MessageKind, Request, classify_message, dispatch_request, run_acp, run_acp_with_model,
+            schema::InitializeParams,
+            session_registry::{SessionEntry, SessionId},
+            validate_version,
         },
         scripted_model::{
             ScriptedModel,
@@ -1071,32 +994,6 @@ mod tests {
         let error = classify_message(&value).expect_err("a JSON-RPC message must be an object");
 
         assert_eq!(error.to_string(), "JSON-RPC message must be an object.");
-    }
-
-    #[tokio::test]
-    async fn writes_one_compact_newline_terminated_frame_and_flushes() {
-        let value = serde_json::json!({
-            "result": {
-                "protocolVersion": 1
-            }
-        });
-
-        let (mut client_end, agent_end) = duplex(1024);
-
-        let mut agent_output = BufWriter::new(agent_end);
-
-        write_frame(&mut agent_output, &value)
-            .await
-            .expect("frame should be written successfully.");
-        drop(agent_output);
-
-        let mut received = String::new();
-        client_end
-            .read_to_string(&mut received)
-            .await
-            .expect("client should read the frame");
-
-        assert_eq!(received, "{\"result\":{\"protocolVersion\":1}}\n");
     }
 
     fn valid_request_frame_with_size(size: usize) -> String {

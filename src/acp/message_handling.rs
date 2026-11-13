@@ -5,8 +5,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     acp::{
-        AcpError, ConnectionState, ErrorResponse, INTERNAL_ERROR_CODE, InitializeParams,
-        NewSessionParams, PromptContentBlock, PromptParams, Request, SuccessResponse,
+        AcpError, ConnectionState, ErrorResponse, INTERNAL_ERROR_CODE, Request, SuccessResponse,
+        schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
     },
     agent::{self, Model},
@@ -296,8 +296,9 @@ mod test {
     use crate::{
         acp::{
             CONNECTION_NOT_INITIALIZED_CODE, ConnectionState, INVALID_PARAMS_CODE,
-            PromptContentBlock, RESOURCE_NOT_FOUND_CODE, Request,
+            RESOURCE_NOT_FOUND_CODE, Request,
             message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
+            schema::PromptContentBlock,
             session_registry::SessionId,
         },
         agent::Model,

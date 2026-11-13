@@ -906,6 +906,35 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - The sole Clippy length warning belongs to Step 2. Shared test client and Cursor helpers are deferred, not required for closing the revised Step 1.
 - Task 7 remains paused; no cancellation behavior changes belong to this cleanup.
 
+## Session checkpoint — 2026-11-13 (Task 6b split in progress; coffee break)
+
+### Current understanding
+
+- Prompt admission returns `Result<(), ErrorResponse>`: success means the spawned task owns the eventual response. Dispatcher `None` means no immediate frame; JSON `null` is not a substitute.
+- The extracted `issue_prompt` takes the request ID rather than the whole request. Consuming params separately is a partial move and removes the need to clone their JSON.
+- Parent layout chosen: keep `src/acp.rs`, with child modules under `src/acp/`, rather than `mod.rs`.
+- Cargo reads saved files. Temporarily duplicated tests (66 instead of 63) came from an unsaved removal after copying; saving restored 63.
+
+### Source checkpoint
+
+- `message_handling.rs` now owns request dispatch, initialize/new-session/prompt handlers, prompt parsing, the spawned turn body, and related unit tests.
+- `session_registry.rs` owns session IDs, entries, registry aliases, lookup, and lookup tests. `transport.rs` currently owns the two writer functions.
+- `acp.rs` retains wire types, connection state, framing/classification, reader routing including cancellation, orchestration, and remaining tests.
+- User chose to pause the match-router rewrite and proceed to Step 4 before completing Steps 2–3. These earlier steps remain unfinished, not waived.
+- Source working tree was clean at review. Assistant validation: `cargo test --locked` passed all 63 tests; `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` passed without warnings. User also reported an earlier executable build and successful Zed smoke test after extraction.
+
+### Exact resume point
+
+- Continue the file split one move at a time. Suggested next bounded move: move the direct `write_frame` unit test beside its implementation in `transport.rs`; leave whole-connection writer/reader tests at the integration level.
+- Module boundaries are coherent so far. Later, narrow internal visibility (`pub(super)` where appropriate; private for same-module helpers) rather than exposing every extracted function with `pub`.
+- Keep all source edits learner-owned and save all changed files before validation.
+
+### Unverified or deferred
+
+- Full premerge, black-box suite, and baseline test-name comparison were not run in this review; 63 passing tests alone does not prove preservation of every test name.
+- Parent remains 1,497 lines and message handling 674 including tests; file split acceptance is not yet met.
+- Router simplification, shared serialization, typed request errors, cancellation handler extraction, and remaining Step 2 cleanup remain deferred. Task 7 lifecycle issues remain deferred as before.
+
 ## Validation record
 
 Add one structured entry after validation:

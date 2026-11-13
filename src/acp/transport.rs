@@ -29,3 +29,36 @@ pub async fn write_frames<W: AsyncWrite + Unpin + Send>(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use tokio::io::{AsyncReadExt, BufWriter, duplex};
+
+    use crate::acp::transport::write_frame;
+
+    #[tokio::test]
+    async fn writes_one_compact_newline_terminated_frame_and_flushes() {
+        let value = serde_json::json!({
+            "result": {
+                "protocolVersion": 1
+            }
+        });
+
+        let (mut client_end, agent_end) = duplex(1024);
+
+        let mut agent_output = BufWriter::new(agent_end);
+
+        write_frame(&mut agent_output, &value)
+            .await
+            .expect("frame should be written successfully.");
+        drop(agent_output);
+
+        let mut received = String::new();
+        client_end
+            .read_to_string(&mut received)
+            .await
+            .expect("client should read the frame");
+
+        assert_eq!(received, "{\"result\":{\"protocolVersion\":1}}\n");
+    }
+}
