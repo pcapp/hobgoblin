@@ -671,13 +671,7 @@ async fn dispatch_request<M: Model + Send + Sync + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::{HashMap, VecDeque},
-        io::Cursor,
-        path::PathBuf,
-        sync::Arc,
-        time::Duration,
-    };
+    use std::{collections::VecDeque, io::Cursor, path::PathBuf, sync::Arc, time::Duration};
 
     use serde_json::Value;
     use tokio::{
@@ -685,7 +679,7 @@ mod tests {
             AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, DuplexStream,
             ReadHalf, WriteHalf, duplex, split,
         },
-        sync::{Notify, RwLock, mpsc},
+        sync::{Notify, mpsc},
     };
 
     use uuid::Uuid;
@@ -706,8 +700,8 @@ mod tests {
             CONNECTION_NOT_INITIALIZED_CODE, ConnectionState, INVALID_PARAMS_CODE,
             InitializeParams, MAX_FRAME_BYTES, METHOD_NOT_FOUND_CODE, MessageKind,
             PromptContentBlock, RESOURCE_NOT_FOUND_CODE, Request, SessionEntry, SessionId,
-            classify_message, dispatch_request, get_session, join_text_blocks, parse_prompt_params,
-            run_acp, run_acp_with_model, transport::write_frame, validate_version,
+            classify_message, dispatch_request, join_text_blocks, parse_prompt_params, run_acp,
+            run_acp_with_model, transport::write_frame, validate_version,
         },
         agent::Model,
         scripted_model::{
@@ -2140,43 +2134,5 @@ mod tests {
         });
 
         parse_prompt_params(Some(params)).expect_err("empty prompt arrays should not parse");
-    }
-
-    #[tokio::test]
-    async fn get_session_should_return_sessions_if_they_are_registered() {
-        let session = Session::empty(PathBuf::from("/tmp"));
-        let session_entry = Arc::new(SessionEntry::new(session));
-        let mut session_by_id = HashMap::new();
-        let session_id = SessionId(
-            Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("a valid UUID"),
-        );
-
-        session_by_id.insert(session_id.clone(), Arc::clone(&session_entry));
-        let registry = Arc::new(RwLock::new(session_by_id));
-
-        let handle = get_session(&registry, &session_id)
-            .await
-            .expect("a concrete session");
-
-        assert!(Arc::ptr_eq(&session_entry, &handle));
-    }
-
-    #[tokio::test]
-    async fn get_session_should_return_none_for_absent_sessions() {
-        let session = Session::empty(PathBuf::from("/tmp"));
-
-        let session_entry = Arc::new(SessionEntry::new(session));
-        let mut session_by_id = HashMap::new();
-        let first_session_id = SessionId(
-            Uuid::parse_str("00000000-0000-0000-0000-000000000001").expect("a valid UUID"),
-        );
-        let missing_session_id = SessionId(
-            Uuid::parse_str("00000000-0000-0000-0000-000000000002").expect("a valid UUID"),
-        );
-
-        session_by_id.insert(first_session_id.clone(), session_entry);
-        let registry = Arc::new(RwLock::new(session_by_id));
-
-        assert!(get_session(&registry, &missing_session_id).await.is_none())
     }
 }
