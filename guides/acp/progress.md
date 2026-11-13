@@ -25,7 +25,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Not started; baseline on 2026-11-12: 61 test names, green `./premerge.sh`, black-box suite 8 of 8 |
+| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. 63 Rust tests pass; only `dispatch` triggers `too_many_lines`. Step 1 acceptance validation remains partially outstanding; next implementation is Step 2. |
 | [7 — Cancellation](07-cancellation.md) | paused | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
@@ -874,6 +874,37 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 - After 6b, resume Task 7 at the exact resume point in the 2026-11-10 checkpoint. Line numbers there will have moved.
 - The non-bug backlog (LICENSE, `CLAUDE.md` review, one model client, and others) lives in `06b-cleanup.md`.
+
+## Session checkpoint — 2026-11-12 (Task 6b shared support; Step 2 next)
+
+### Current understanding
+
+- `Model` fixes the call contract, not the concrete implementation's fields. Scripted responses configure behavior internally; recorded requests remain full JSON request values.
+- `Mutex` provides interior mutability for `complete(&self, ...)`; `Arc` provides shared ownership when the test retains access after handing the model to ACP.
+- An `Arc<ScriptedModel>` needs its own forwarding `Model` implementation to satisfy a generic `M: Model` bound; method autoderef alone does not satisfy that bound.
+- Futures are lazy. Creating a future does not run it, and a spawned async block must await the inner ACP future.
+- The gated reply uses `started` and `released` notifications. Merely checking eventual completion does not prove it waited for release.
+
+### Source checkpoint
+
+- Shared scripted replies and request recording live in `src/scripted_model.rs`; immediate and gated variants replace the repeated scripted model implementations. `InertModel` remains for tests that must not call a model.
+- `src/test_messages.rs` contains assistant reply, prompt request, cancellation notification, and agent message chunk helpers. Both shared modules are test-only in `main.rs`.
+- The interactive conversation test now supplies two canned replies for two turns. The cancellation assertion was adjusted to inspect the recorded request's `messages` field rather than comparing the entire request to an array.
+- User explicitly deferred the shared test client and Cursor setup helpers. Their design decision remains open until that work is resumed. The task guide records this scope adjustment.
+- Latest validation run in this session: `cargo test --locked` exited 0, 63 passed. `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` exited 0 with one warning: `dispatch` (156/100 lines). No test-function length warnings remain.
+
+### Exact resume point
+
+- Next implementation: Task 6b Step 2, make `dispatch` delegate, beginning with one handler extraction while keeping existing behavior and error responses unchanged.
+- Inspect the current initialize branch and agree its extraction boundary before implementing. Do not front-load the later typed-error or module-split designs.
+- Keep source edits learner-owned. No commit was made by the assistant.
+
+### Unverified or deferred
+
+- Step 1 implementation is complete under revised scope, but final acceptance is not fully verified: run `./premerge.sh`, the black-box ACP suite, and the baseline test-name comparison. Account explicitly for the two added scripted-model tests (61 baseline versus 63 now); count alone does not prove no old test was lost.
+- Whether the gated-model test now definitively checks waiting before release has not been re-reviewed.
+- The sole Clippy length warning belongs to Step 2. Shared test client and Cursor helpers are deferred, not required for closing the revised Step 1.
+- Task 7 remains paused; no cancellation behavior changes belong to this cleanup.
 
 ## Validation record
 

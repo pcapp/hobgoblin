@@ -55,9 +55,15 @@ Example of the target: the cancellation test should read roughly as *initialize 
 1. How does the shared scripted model express "block on this reply until the test releases it"? Today one test uses two `Notify`s and a turn counter. Options include a reply enum, a separate gated model, or a per-reply gate.
 2. Do the `Cursor`-based tests (send all frames, read to EOF) and the duplex tests (interactive) share one client type, or does each get its own helper?
 
+### Scope adjustment — 2026-11-12
+
+The shared test client and Cursor setup helpers are deferred until additional interactive tests make the duplication worth abstracting. Only two current tests clearly fit the proposed client; transport-specific tests may need direct access to their plumbing. The choice between shared or separate Cursor/duplex helpers remains undecided. Existing frame helpers stay in place.
+
+Step 1's implementation scope is the shared scripted model and the four message-building helpers. Separate test-only `scripted_model` and `test_messages` modules satisfy the shared-support goal.
+
 ### Acceptance
 
-- `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` reports nothing.
+- `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` reports no test-function warnings. The existing `dispatch` warning is deferred to Step 2; the full cleanup must finish warning-free.
 - There is one scripted model definition in the crate: `grep -rn 'impl.*Model for' src` lists only the two real models and the shared test ones.
 - The test-name check below passes.
 

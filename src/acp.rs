@@ -190,14 +190,14 @@ struct Implementation {
     version: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct SuccessResponse<T> {
     jsonrpc: String,
     id: Value,
     result: T,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ErrorResponse {
     jsonrpc: String,
     id: Value,
@@ -236,7 +236,7 @@ impl ErrorResponse {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ResponseError {
     code: i32,
     message: String,
@@ -471,6 +471,33 @@ where
     Ok(())
 }
 
+async fn handle_initialize(
+    request: Request<Value>,
+    state: &mut ConnectionState,
+) -> Result<SuccessResponse<Value>, ErrorResponse> {
+    let params = request.params.unwrap_or(Value::Null);
+
+    if serde_json::from_value::<InitializeParams>(params).is_err() {
+        let response = ErrorResponse::invalid_params(request.id);
+        return Err(response);
+    }
+
+    state.initialized = true;
+    let result = serde_json::json!({
+        "protocolVersion": 1,
+        "agentCapabilities": {},
+        "authMethods": []
+    });
+
+    let response = SuccessResponse {
+        jsonrpc: String::from("2.0"),
+        id: request.id,
+        result,
+    };
+
+    Ok(response)
+}
+
 async fn dispatch<M: Model + Send + Sync + 'static>(
     request: Request<Value>,
     state: &mut ConnectionState,
@@ -478,31 +505,12 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
     sender: &mpsc::Sender<Value>,
 ) -> Result<Option<Value>, AcpError> {
     if request.method == "initialize" {
-        let params = request.params.unwrap_or(Value::Null);
-
-        if serde_json::from_value::<InitializeParams>(params).is_err() {
-            let response = ErrorResponse::invalid_params(request.id);
-
-            let response = serde_json::to_value(response)?;
-
-            return Ok(Some(response));
-        }
-
-        state.initialized = true;
-        let result = serde_json::json!({
-            "protocolVersion": 1,
-            "agentCapabilities": {},
-            "authMethods": []
-        });
-
-        let response = SuccessResponse {
-            jsonrpc: String::from("2.0"),
-            id: request.id,
-            result,
+        let result = match handle_initialize(request, state).await {
+            Ok(response) => serde_json::to_value(response)?,
+            Err(err) => serde_json::to_value(err)?,
         };
 
-        let response = serde_json::to_value(response)?;
-        Ok(Some(response))
+        Ok(Some(result))
     } else if request.method == "session/new" && !state.initialized {
         let response = ErrorResponse::connection_not_initialized(request.id);
 
