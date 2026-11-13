@@ -1,18 +1,22 @@
+mod json_rpc;
 mod message_handling;
 mod schema;
 mod session_registry;
 mod transport;
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite};
 
 use tokio::sync::{RwLock, mpsc};
 
+use crate::acp::json_rpc::{
+    MessageKind, Notification, Request, classify_message, validate_version,
+};
 use crate::acp::message_handling::dispatch_request;
 use crate::acp::schema::CancelParams;
 use crate::acp::session_registry::{SessionRegistry, get_session};
@@ -20,12 +24,6 @@ use crate::acp::transport::write_frames;
 use crate::agent::{Model, OpenRouterModel};
 
 type AcpError = Box<dyn Error + Send + Sync>;
-
-const INVALID_PARAMS_CODE: i32 = -32602;
-const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32600;
-const METHOD_NOT_FOUND_CODE: i32 = -32601;
-const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
-const INTERNAL_ERROR_CODE: i32 = -32603;
 
 struct ConnectionState {
     initialized: bool,
@@ -41,108 +39,7 @@ impl ConnectionState {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct Notification<T> {
-    method: String,
-    params: Option<T>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Request<T> {
-    id: Value,
-
-    #[allow(dead_code)]
-    method: String,
-
-    #[allow(dead_code)]
-    params: Option<T>,
-}
-
-#[derive(Debug, Serialize)]
-struct SuccessResponse<T> {
-    jsonrpc: String,
-    id: Value,
-    result: T,
-}
-
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    jsonrpc: String,
-    id: Value,
-    error: ResponseError,
-}
-
-impl ErrorResponse {
-    fn new(id: Value, code: i32, message: &str) -> Self {
-        Self {
-            jsonrpc: String::from("2.0"),
-            id,
-            error: ResponseError {
-                code,
-                message: message.to_string(),
-            },
-        }
-    }
-    fn invalid_params(id: Value) -> Self {
-        Self::new(id, INVALID_PARAMS_CODE, "Invalid params")
-    }
-
-    fn connection_not_initialized(id: Value) -> Self {
-        Self::new(
-            id,
-            CONNECTION_NOT_INITIALIZED_CODE,
-            "Connection not initialized",
-        )
-    }
-
-    fn method_not_found(id: Value) -> Self {
-        Self::new(id, METHOD_NOT_FOUND_CODE, "Method not found")
-    }
-
-    fn resource_not_found(id: Value) -> Self {
-        Self::new(id, RESOURCE_NOT_FOUND_CODE, "Resource not found")
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct ResponseError {
-    code: i32,
-    message: String,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum MessageKind {
-    Request,
-    Notification,
-    Response,
-}
-
 const MAX_FRAME_BYTES: usize = 64 * 1024;
-
-fn classify_message(value: &Value) -> Result<MessageKind, AcpError> {
-    let object = value.as_object().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "JSON-RPC message must be an object.",
-        )
-    })?;
-
-    let has_method = object.contains_key("method");
-    let has_id = object.contains_key("id");
-    let has_result = object.contains_key("result");
-    let has_error = object.contains_key("error");
-
-    match (has_method, has_id, has_result, has_error) {
-        (true, true, false, false) => Ok(MessageKind::Request),
-        (true, false, false, false) => Ok(MessageKind::Notification),
-        (false, true, true, false) | (false, true, false, true) => Ok(MessageKind::Response),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "invalid JSON-RPC message shape",
-        )
-        .into()),
-    }
-}
 
 fn validate_request(request: &Request<Value>) -> Result<(), AcpError> {
     let is_supported_id = match &request.id {
@@ -160,17 +57,6 @@ fn validate_request(request: &Request<Value>) -> Result<(), AcpError> {
     }
 
     Ok(())
-}
-
-fn validate_version(value: &Value) -> Result<(), AcpError> {
-    match value.get("jsonrpc").and_then(|version| version.as_str()) {
-        Some("2.0") => Ok(()),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "expected JSON-RPC version 2.0",
-        )
-        .into()),
-    }
 }
 
 async fn read_frames<R, M>(
@@ -337,8 +223,9 @@ mod tests {
 
     use crate::{
         acp::{
-            ConnectionState, INVALID_PARAMS_CODE, MAX_FRAME_BYTES, METHOD_NOT_FOUND_CODE,
-            MessageKind, Request, classify_message, dispatch_request, run_acp, run_acp_with_model,
+            ConnectionState, MAX_FRAME_BYTES, Request, dispatch_request,
+            json_rpc::{INVALID_PARAMS_CODE, METHOD_NOT_FOUND_CODE},
+            run_acp, run_acp_with_model,
             schema::InitializeParams,
             session_registry::{SessionEntry, SessionId},
             validate_version,
@@ -874,128 +761,6 @@ mod tests {
         assert_eq!(error.to_string(), "expected JSON-RPC version 2.0")
     }
 
-    #[test]
-    fn classify_request() {
-        let value = serde_json::json!({
-            "id": 1,
-            "method": "initialize",
-            "params": {},
-        });
-
-        let kind = classify_message(&value).expect("to be a valid Request");
-
-        assert_eq!(kind, MessageKind::Request);
-    }
-
-    #[test]
-    fn classify_notification() {
-        let value = serde_json::json!({
-            "method": "method_name",
-            "params": {},
-        });
-
-        let kind = classify_message(&value).expect("to be a valid Notification");
-
-        assert_eq!(kind, MessageKind::Notification);
-    }
-
-    #[test]
-    fn classify_successful_response() {
-        let value = serde_json::json!({
-            "id": 1,
-            "result": {}
-        });
-
-        let kind = classify_message(&value).expect("to be a valid Response");
-
-        assert_eq!(kind, MessageKind::Response);
-    }
-
-    #[test]
-    fn classify_error_response() {
-        let value = serde_json::json!({
-            "id": 1,
-            "error": {}
-        });
-
-        let kind = classify_message(&value).expect("to be a valid Response");
-
-        assert_eq!(kind, MessageKind::Response);
-    }
-
-    #[test]
-    fn classify_result_and_error_as_invalid() {
-        let value = serde_json::json!({
-            "id": 1,
-            "error": {},
-            "result": {}
-        });
-
-        let error = classify_message(&value)
-            .expect_err("a message with a result and an error should be rejected");
-
-        assert_eq!(error.to_string(), "invalid JSON-RPC message shape");
-    }
-
-    #[test]
-    fn classify_method_and_result_as_invalid() {
-        let value = serde_json::json!({
-            "id": 1,
-            "method": "message",
-            "result": {}
-        });
-
-        let error = classify_message(&value)
-            .expect_err("a message with a method and a result should be rejected");
-
-        assert_eq!(error.to_string(), "invalid JSON-RPC message shape");
-    }
-
-    #[test]
-    fn classify_method_and_error_as_invalid() {
-        let value = serde_json::json!({
-            "id": 1,
-            "method": "message",
-            "error": {}
-        });
-
-        let error = classify_message(&value)
-            .expect_err("a message with a method and an error should be rejected");
-
-        assert_eq!(error.to_string(), "invalid JSON-RPC message shape");
-    }
-
-    #[test]
-    fn classify_result_without_id_as_invalid() {
-        let value = serde_json::json!({
-            "result": {}
-        });
-
-        let error = classify_message(&value)
-            .expect_err("a response-shaped message without an ID should be rejected");
-
-        assert_eq!(error.to_string(), "invalid JSON-RPC message shape");
-    }
-
-    #[test]
-    fn classify_empty_object_as_invalid() {
-        let value = serde_json::json!({});
-
-        let error = classify_message(&value)
-            .expect_err("an object without identifying fields should be rejected");
-
-        assert_eq!(error.to_string(), "invalid JSON-RPC message shape");
-    }
-
-    #[test]
-    fn classify_non_object_as_invalid() {
-        let value = serde_json::json!([]);
-
-        let error = classify_message(&value).expect_err("a JSON-RPC message must be an object");
-
-        assert_eq!(error.to_string(), "JSON-RPC message must be an object.");
-    }
-
     fn valid_request_frame_with_size(size: usize) -> String {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -1021,20 +786,6 @@ mod tests {
         run_acp(reader, writer)
             .await
             .expect("clean EOF should end ACP mode successfully");
-    }
-
-    #[test]
-    fn invalidates_jsonrpc_other_than_2() {
-        let request = serde_json::json!({
-            "jsonrpc": "1.0",
-            "id": 0,
-            "method": "initialize",
-        });
-
-        let error = validate_version(&request)
-            .expect_err("JSON-RPC versions other than 2.0 should be rejected");
-
-        assert_eq!(error.to_string(), "expected JSON-RPC version 2.0");
     }
 
     #[tokio::test]

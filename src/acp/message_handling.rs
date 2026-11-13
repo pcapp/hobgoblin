@@ -5,7 +5,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     acp::{
-        AcpError, ConnectionState, ErrorResponse, INTERNAL_ERROR_CODE, Request, SuccessResponse,
+        AcpError, ConnectionState, Request,
+        json_rpc::{ErrorResponse, SuccessResponse},
         schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
     },
@@ -231,7 +232,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 Err(error) => {
                     let message = format!("Request {} failed: {error}", request_id);
 
-                    let response = ErrorResponse::new(request_id, INTERNAL_ERROR_CODE, &message);
+                    let response = ErrorResponse::internal_error(request_id, &message);
                     sender.send(serde_json::to_value(response)?).await?;
 
                     return Ok(());
@@ -295,8 +296,10 @@ mod test {
 
     use crate::{
         acp::{
-            CONNECTION_NOT_INITIALIZED_CODE, ConnectionState, INVALID_PARAMS_CODE,
-            RESOURCE_NOT_FOUND_CODE, Request,
+            ConnectionState, Request,
+            json_rpc::{
+                CONNECTION_NOT_INITIALIZED_CODE, INVALID_PARAMS_CODE, RESOURCE_NOT_FOUND_CODE,
+            },
             message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
             schema::PromptContentBlock,
             session_registry::SessionId,
