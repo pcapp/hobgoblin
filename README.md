@@ -20,7 +20,7 @@ ACP is implemented directly with Tokio and Serde, not through an SDK, so the JSO
 
 ## Requirements
 
-- Rust 1.96 or newer
+- Rust 1.100 or newer
 - An [OpenRouter](https://openrouter.ai/) API key. In ACP mode, `initialize` and `session/new` work without one; prompts need it.
 
 ## Setup

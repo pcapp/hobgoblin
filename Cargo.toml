@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Peter Cappetto"]
 description = "A coding agent harness in Rust that speaks ACP."
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.100"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "io-std", "sync"] }  # async runtime
