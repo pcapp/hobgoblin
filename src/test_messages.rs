@@ -12,6 +12,21 @@ pub fn assistant_reply(text: &str) -> Value {
     })
 }
 
+pub fn make_initialize() -> Value {
+    serde_json::json!({
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+          "protocolVersion": 1,
+          "clientCapabilities": {},
+          "clientInfo": {
+              "version": "1.0.0"
+          }
+      }
+    })
+}
+
 pub fn make_prompt_request(id: u64, session_id: &str, prompt: &str) -> Value {
     serde_json::json!({
       "jsonrpc": "2.0",

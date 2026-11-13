@@ -49,8 +49,8 @@ async fn get_session(registry: &SessionRegistry, session_id: &SessionId) -> Opti
 }
 
 const INVALID_PARAMS_CODE: i32 = -32602;
+const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32600;
 const METHOD_NOT_FOUND_CODE: i32 = -32601;
-const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32001;
 const RESOURCE_NOT_FOUND_CODE: i32 = -32002;
 const INTERNAL_ERROR_CODE: i32 = -32603;
 
@@ -374,7 +374,9 @@ where
                 let request: Request<Value> = serde_json::from_str(&input)?;
                 validate_request(&request)?;
 
-                if let Some(response) = dispatch(request, &mut state, &model, &sender).await? {
+                if let Some(response) =
+                    dispatch_request(request, &mut state, &model, &sender).await?
+                {
                     sender.send(response).await?;
                 }
             }
@@ -498,7 +500,7 @@ async fn handle_initialize(
     Ok(response)
 }
 
-async fn dispatch<M: Model + Send + Sync + 'static>(
+async fn dispatch_request<M: Model + Send + Sync + 'static>(
     request: Request<Value>,
     state: &mut ConnectionState,
     model: &Arc<M>,
@@ -510,13 +512,17 @@ async fn dispatch<M: Model + Send + Sync + 'static>(
             Err(err) => serde_json::to_value(err)?,
         };
 
-        Ok(Some(result))
-    } else if request.method == "session/new" && !state.initialized {
+        return Ok(Some(result));
+    }
+
+    if !state.initialized {
         let response = ErrorResponse::connection_not_initialized(request.id);
 
         let response = serde_json::to_value(response)?;
-        Ok(Some(response))
-    } else if request.method == "session/new" {
+        return Ok(Some(response));
+    }
+
+    if request.method == "session/new" {
         let params = request.params.unwrap_or(Value::Null);
         let NewSessionParams {
             cwd,
@@ -710,11 +716,11 @@ mod tests {
 
     use crate::{
         acp::{
-            ConnectionState, INVALID_PARAMS_CODE, InitializeParams, MAX_FRAME_BYTES,
-            METHOD_NOT_FOUND_CODE, MessageKind, PromptContentBlock, RESOURCE_NOT_FOUND_CODE,
-            Request, SessionEntry, SessionId, classify_message, dispatch, get_session,
-            join_text_blocks, parse_prompt_params, run_acp, run_acp_with_model, validate_version,
-            write_frame,
+            CONNECTION_NOT_INITIALIZED_CODE, ConnectionState, INVALID_PARAMS_CODE,
+            InitializeParams, MAX_FRAME_BYTES, METHOD_NOT_FOUND_CODE, MessageKind,
+            PromptContentBlock, RESOURCE_NOT_FOUND_CODE, Request, SessionEntry, SessionId,
+            classify_message, dispatch_request, get_session, join_text_blocks, parse_prompt_params,
+            run_acp, run_acp_with_model, validate_version, write_frame,
         },
         agent::Model,
         scripted_model::{
@@ -723,7 +729,7 @@ mod tests {
         },
         session::Session,
         test_messages::{
-            assistant_reply, make_agent_message_chunk, make_cancel_notification,
+            assistant_reply, make_agent_message_chunk, make_cancel_notification, make_initialize,
             make_prompt_request,
         },
     };
@@ -890,13 +896,16 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model, &sender)
+        let response = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
 
         assert_eq!(response["id"], serde_json::json!(1));
-        assert_eq!(response["error"]["code"], serde_json::json!(-32001));
+        assert_eq!(
+            response["error"]["code"],
+            serde_json::json!(CONNECTION_NOT_INITIALIZED_CODE)
+        );
         assert!(response.get("result").is_none());
         assert!(state.sessions.read().await.is_empty());
     }
@@ -917,7 +926,7 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model, &sender)
+        let response = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -952,7 +961,7 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model, &sender)
+        let response = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("should return a response with an error field");
@@ -992,12 +1001,12 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _) = mpsc::channel(2);
 
-        let first_response = dispatch(first_request, &mut state, &model, &sender)
+        let first_response = dispatch_request(first_request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
 
-        let second_response = dispatch(second_request, &mut state, &model, &sender)
+        let second_response = dispatch_request(second_request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -1067,7 +1076,7 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _) = mpsc::channel(2);
 
-        let response = dispatch(request, &mut state, &model, &sender)
+        let response = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce a response");
@@ -1149,7 +1158,7 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model, &sender)
+        let result = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");
@@ -1173,7 +1182,7 @@ mod tests {
         let model = Arc::new(InertModel);
         let (sender, _receiver) = mpsc::channel(2);
 
-        let result = dispatch(request, &mut state, &model, &sender)
+        let result = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed")
             .expect("request should produce an error response");
@@ -1268,7 +1277,7 @@ mod tests {
         let model = Arc::new(model);
         let (sender, mut receiver) = mpsc::channel(2);
 
-        let dispatch_result = dispatch(request, &mut state, &model, &sender)
+        let dispatch_result = dispatch_request(request, &mut state, &model, &sender)
             .await
             .expect("dispatch should succeed");
 
@@ -1873,36 +1882,31 @@ mod tests {
 
     #[tokio::test]
     async fn respond_to_unknown_methods() {
-        let request = serde_json::json!({
+        let bad_request = serde_json::json!({
           "jsonrpc": "2.0",
-          "id": 1,
+          "id": 2,
           "method": "this is not real",
           "params": {}
         });
 
-        let mut input = serde_json::to_string(&request).expect("request should serialize");
-        input.push('\n');
-        let reader = Cursor::new(input.into_bytes());
-        let (mut client_end, agent_end) = duplex(1024);
+        let (client, agent) = duplex(1024);
+        let (agent_reader, agent_writer) = split(agent);
+        let (client_reader, mut client_writer) = split(client);
 
-        let agent_output = BufWriter::new(agent_end);
+        let agent_reader = BufReader::new(agent_reader);
+        let mut client_reader = BufReader::new(client_reader);
 
-        run_acp(reader, agent_output)
-            .await
-            .expect("request should succeed");
+        let model = ScriptedModel::new(VecDeque::new());
 
-        let mut received = Vec::new();
-        client_end
-            .read_to_end(&mut received)
-            .await
-            .expect("client should read agent output");
+        let agent_task = tokio::spawn(run_acp_with_model(agent_reader, agent_writer, model));
+        initialize(&mut client_writer, &mut client_reader).await;
 
-        let result = serde_json::from_str(&String::from_utf8(received).expect("to be a string"))
-            .expect("to be a valid message");
+        send_frame(&mut client_writer, &bad_request).await;
+        let result = read_frame(&mut client_reader).await;
 
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
-        assert_eq!(result["id"], serde_json::json!(1));
+        assert_eq!(result["id"], serde_json::json!(2));
         assert!(
             result.get("result").is_none(),
             "an error response must not contain a result"
@@ -1910,23 +1914,22 @@ mod tests {
 
         let error = &result["error"];
         assert_eq!(error["code"], METHOD_NOT_FOUND_CODE);
-        assert_eq!(error["message"], "Method not found")
+        assert_eq!(error["message"], "Method not found");
+
+        client_writer
+            .shutdown()
+            .await
+            .expect("client writer to shutdown");
+
+        agent_task
+            .await
+            .expect("to join successfully")
+            .expect("to shutdown gracefully");
     }
 
     #[tokio::test]
     async fn responds_with_invalid_params_when_client_info_is_missing_name() {
-        let request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {
-              "protocolVersion": 1,
-              "clientCapabilities": {},
-              "clientInfo": {
-                  "version": "1.0.0"
-              }
-          }
-        });
+        let request = make_initialize();
 
         let mut input = serde_json::to_string(&request).expect("request should serialize");
         input.push('\n');
