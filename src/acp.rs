@@ -500,6 +500,47 @@ async fn handle_initialize(
     Ok(response)
 }
 
+async fn handle_new_session(
+    request: Request<Value>,
+    state: &mut ConnectionState,
+) -> Result<SuccessResponse<Value>, ErrorResponse> {
+    let params = request.params.unwrap_or(Value::Null);
+    let NewSessionParams {
+        cwd,
+        mcp_servers: _,
+    } = match serde_json::from_value::<NewSessionParams>(params) {
+        Ok(params) => params,
+        Err(_) => {
+            let response = ErrorResponse::invalid_params(request.id);
+            return Err(response);
+        }
+    };
+
+    if !cwd.is_absolute() {
+        let response = ErrorResponse::invalid_params(request.id);
+        return Err(response);
+    }
+
+    let session_id = SessionId::new();
+    let session_entry = Arc::new(SessionEntry::new(Session::empty(cwd)));
+
+    {
+        let mut sessions = state.sessions.write().await;
+        sessions.insert(session_id.clone(), session_entry);
+    }
+
+    let result = serde_json::json!({
+        "sessionId": session_id,
+    });
+    let response = SuccessResponse {
+        jsonrpc: String::from("2.0"),
+        id: request.id,
+        result,
+    };
+
+    Ok(response)
+}
+
 async fn dispatch_request<M: Model + Send + Sync + 'static>(
     request: Request<Value>,
     state: &mut ConnectionState,
@@ -523,43 +564,12 @@ async fn dispatch_request<M: Model + Send + Sync + 'static>(
     }
 
     if request.method == "session/new" {
-        let params = request.params.unwrap_or(Value::Null);
-        let NewSessionParams {
-            cwd,
-            mcp_servers: _,
-        } = match serde_json::from_value::<NewSessionParams>(params) {
-            Ok(params) => params,
-            Err(_) => {
-                let response = ErrorResponse::invalid_params(request.id);
-
-                return Ok(Some(serde_json::to_value(response)?));
-            }
+        let result = match handle_new_session(request, state).await {
+            Ok(response) => serde_json::to_value(response)?,
+            Err(err) => serde_json::to_value(err)?,
         };
 
-        if !cwd.is_absolute() {
-            let response = ErrorResponse::invalid_params(request.id);
-
-            return Ok(Some(serde_json::to_value(response)?));
-        }
-
-        let session_id = SessionId::new();
-        let session_entry = Arc::new(SessionEntry::new(Session::empty(cwd)));
-
-        {
-            let mut sessions = state.sessions.write().await;
-            sessions.insert(session_id.clone(), session_entry);
-        }
-
-        let result = serde_json::json!({
-            "sessionId": session_id,
-        });
-        let response = SuccessResponse {
-            jsonrpc: String::from("2.0"),
-            id: request.id,
-            result,
-        };
-
-        Ok(Some(serde_json::to_value(response)?))
+        Ok(Some(result))
     } else if request.method == "session/prompt" {
         let value = request.params.unwrap_or(Value::Null);
         let (session_id, prompt) = match parse_prompt_params(Some(value)) {
