@@ -288,7 +288,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
     use serde_json::Value;
     use tokio::sync::mpsc;
@@ -302,10 +302,12 @@ mod test {
             },
             message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
             schema::PromptContentBlock,
-            session_registry::SessionId,
+            session_registry::{SessionEntry, SessionId},
         },
         agent::Model,
-        test_messages::make_prompt_request,
+        scripted_model::{ScriptedModel, TurnResponse::Done},
+        session::Session,
+        test_messages::{assistant_reply, make_prompt_request},
     };
 
     struct InertModel;
@@ -591,6 +593,97 @@ mod test {
             "an error response must not contain a result"
         );
         assert_eq!(result["error"]["code"], RESOURCE_NOT_FOUND_CODE);
+    }
+
+    #[tokio::test]
+    async fn session_prompt_runs_model_and_retains_conversation() {
+        let responses = [Done {
+            response: assistant_reply("scripted answer"),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
+            let session_id = SessionId(uuid);
+
+            registry.insert(session_id, Arc::clone(&session_entry));
+        }
+        state.initialized = true;
+
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let value = make_prompt_request(3, session_id, "What is 1+1?");
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = Arc::new(model);
+        let (sender, mut receiver) = mpsc::channel(2);
+
+        let dispatch_result = dispatch_request(request, &mut state, &model, &sender)
+            .await
+            .expect("dispatch should succeed");
+
+        drop(sender);
+
+        assert!(
+            dispatch_result.is_none(),
+            "spawned prompt handling should send through the writer channel"
+        );
+
+        let update = receiver
+            .recv()
+            .await
+            .expect("to receive an agent_updated_message");
+
+        assert_eq!(update["jsonrpc"], "2.0");
+        assert_eq!(update["method"], "session/update");
+        assert!(update.get("id").is_none());
+        assert_eq!(
+            update["params"]["update"]["sessionUpdate"],
+            "agent_message_chunk"
+        );
+        assert_eq!(update["params"]["update"]["content"]["type"], "text");
+        assert_eq!(
+            update["params"]["sessionId"],
+            "00000000-0000-0000-0000-000000000001"
+        );
+        assert_eq!(
+            update["params"]["update"]["content"]["text"],
+            "scripted answer"
+        );
+
+        let result = receiver
+            .recv()
+            .await
+            .expect("prompt should send a final response");
+
+        assert_eq!(result["jsonrpc"], "2.0");
+        assert_eq!(result["id"], serde_json::json!(3));
+        assert!(
+            result.get("error").is_none(),
+            "a result response must not contain an error"
+        );
+        assert_eq!(result["result"]["stopReason"], "end_turn");
+
+        {
+            let guard = session_entry.active_turn_stop.lock().await;
+            assert!(guard.is_none());
+        }
+        let session_guard = session_entry.session.lock().await;
+        assert_eq!(session_guard.conversation.messages.len(), 2);
+
+        assert_eq!(session_guard.conversation.messages[0]["role"], "user");
+        assert_eq!(
+            session_guard.conversation.messages[0]["content"],
+            "What is 1+1?"
+        );
+
+        assert_eq!(session_guard.conversation.messages[1]["role"], "assistant");
+        assert_eq!(
+            session_guard.conversation.messages[1]["content"],
+            "scripted answer"
+        );
     }
 
     #[test]
