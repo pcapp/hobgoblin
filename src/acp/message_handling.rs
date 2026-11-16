@@ -651,10 +651,7 @@ mod test {
     #[tokio::test]
     async fn session_prompt_runs_sends_an_error_if_the_model_call_fails() {
         let responses = [Error {
-            error: Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "simulated failure",
-            )),
+            error: Box::new(std::io::Error::other("simulated failure")),
         }];
 
         let model = ScriptedModel::new(VecDeque::from(responses));
