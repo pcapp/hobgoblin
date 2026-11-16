@@ -6,6 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{
     acp::{
         AcpError, ConnectionState, Request,
+        errors::RequestError,
         json_rpc::{ErrorResponse, SuccessResponse},
         schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
@@ -14,35 +15,43 @@ use crate::{
     session::Session,
 };
 
+fn build_success_response(request_id: Value, result: Value) -> Result<Value, serde_json::Error> {
+    let response = SuccessResponse {
+        jsonrpc: String::from("2.0"),
+        id: request_id,
+        result,
+    };
+
+    serde_json::to_value(response)
+}
+
 pub async fn dispatch_request<M: Model + Send + Sync + 'static>(
     request: Request<Value>,
     state: &mut ConnectionState,
     model: &Arc<M>,
     sender: &mpsc::Sender<Value>,
-) -> Result<Option<Value>, AcpError> {
-    if request.method == "initialize" {
-        let result = match handle_initialize(request, state).await {
-            Ok(response) => serde_json::to_value(response)?,
-            Err(err) => serde_json::to_value(err)?,
-        };
+) -> Result<Option<Value>, RequestError> {
+    let request_id = request.id.clone();
 
-        return Ok(Some(result));
+    if request.method == "initialize" {
+        let result = handle_initialize(&request, state).await?;
+        let response = build_success_response(request.id, result)?;
+
+        return Ok(Some(response));
     }
 
     if !state.initialized {
         let response = ErrorResponse::connection_not_initialized(request.id);
-
         let response = serde_json::to_value(response)?;
+
         return Ok(Some(response));
     }
 
     if request.method == "session/new" {
-        let result = match handle_new_session(request, state).await {
-            Ok(response) => serde_json::to_value(response)?,
-            Err(err) => serde_json::to_value(err)?,
-        };
+        let result = handle_new_session(request, state).await?;
+        let response = build_success_response(request_id, result)?;
 
-        Ok(Some(result))
+        Ok(Some(response))
     } else if request.method == "session/prompt" {
         let result = match handle_prompt(request, state, model, sender).await {
             Ok(()) => None,
@@ -58,16 +67,12 @@ pub async fn dispatch_request<M: Model + Send + Sync + 'static>(
 }
 
 pub async fn handle_initialize(
-    request: Request<Value>,
+    request: &Request<Value>,
     state: &mut ConnectionState,
-) -> Result<SuccessResponse<Value>, ErrorResponse> {
-    let params = request.params.unwrap_or(Value::Null);
+) -> Result<Value, RequestError> {
+    let params = request.params.clone().unwrap_or(Value::Null);
 
-    if serde_json::from_value::<InitializeParams>(params).is_err() {
-        let response = ErrorResponse::invalid_params(request.id);
-        return Err(response);
-    }
-
+    serde_json::from_value::<InitializeParams>(params)?;
     state.initialized = true;
     let result = serde_json::json!({
         "protocolVersion": 1,
@@ -75,34 +80,21 @@ pub async fn handle_initialize(
         "authMethods": []
     });
 
-    let response = SuccessResponse {
-        jsonrpc: String::from("2.0"),
-        id: request.id,
-        result,
-    };
-
-    Ok(response)
+    Ok(result)
 }
 
 pub async fn handle_new_session(
     request: Request<Value>,
     state: &mut ConnectionState,
-) -> Result<SuccessResponse<Value>, ErrorResponse> {
+) -> Result<Value, RequestError> {
     let params = request.params.unwrap_or(Value::Null);
     let NewSessionParams {
         cwd,
         mcp_servers: _,
-    } = match serde_json::from_value::<NewSessionParams>(params) {
-        Ok(params) => params,
-        Err(_) => {
-            let response = ErrorResponse::invalid_params(request.id);
-            return Err(response);
-        }
-    };
+    } = serde_json::from_value::<NewSessionParams>(params)?;
 
     if !cwd.is_absolute() {
-        let response = ErrorResponse::invalid_params(request.id);
-        return Err(response);
+        return Err(RequestError::InvalidParams);
     }
 
     let session_id = SessionId::new();
@@ -116,13 +108,8 @@ pub async fn handle_new_session(
     let result = serde_json::json!({
         "sessionId": session_id,
     });
-    let response = SuccessResponse {
-        jsonrpc: String::from("2.0"),
-        id: request.id,
-        result,
-    };
 
-    Ok(response)
+    Ok(result)
 }
 
 pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
@@ -297,6 +284,7 @@ mod test {
     use crate::{
         acp::{
             ConnectionState, Request,
+            errors::RequestError,
             json_rpc::{
                 CONNECTION_NOT_INITIALIZED_CODE, INVALID_PARAMS_CODE, RESOURCE_NOT_FOUND_CODE,
             },
@@ -368,20 +356,14 @@ mod test {
 
         let response = dispatch_request(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("should return a response with an error field");
+            .expect_err("request was malformed");
+
+        assert!(matches!(response, RequestError::InvalidParams));
 
         {
             let registry = state.sessions.read().await;
             assert_eq!(registry.len(), 0);
         }
-
-        assert_eq!(response["id"], serde_json::json!(1));
-        assert_eq!(
-            response["error"]["code"],
-            serde_json::json!(INVALID_PARAMS_CODE)
-        );
-        assert!(response.get("result").is_none());
     }
 
     #[tokio::test]
@@ -403,20 +385,14 @@ mod test {
 
         let response = dispatch_request(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("should return a response with an error field");
+            .expect_err("relative paths are invalid");
 
         {
             let registry = state.sessions.read().await;
             assert_eq!(registry.len(), 0);
         }
 
-        assert_eq!(response["id"], serde_json::json!(1));
-        assert_eq!(
-            response["error"]["code"],
-            serde_json::json!(INVALID_PARAMS_CODE)
-        );
-        assert!(response.get("result").is_none());
+        assert!(matches!(response, RequestError::InvalidParams));
     }
 
     #[tokio::test]

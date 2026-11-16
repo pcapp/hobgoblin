@@ -935,6 +935,38 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Parent remains 1,497 lines and message handling 674 including tests; file split acceptance is not yet met.
 - Router simplification, shared serialization, typed request errors, cancellation handler extraction, and remaining Step 2 cleanup remain deferred. Task 7 lifecycle issues remain deferred as before.
 
+## Session checkpoint — 2026-11-13 (Task 6b JSON-RPC split; end of session)
+
+### Current understanding
+
+- `json_rpc` is an internal grouping of ACP envelope code, not a reusable ACP-independent JSON-RPC library; ACP-specific error helpers can live there.
+- `acp.rs` has a useful coordination role; it does not need to contain only `run_acp`.
+- `pub(super)` exposes an item within its parent module, including siblings, without exposing it throughout the crate. Fields and associated functions have separate visibility.
+- Inline `#[cfg(test)] mod tests { ... }` and a separate `#[cfg(test)] mod tests;` loading `acp/tests.rs` represent the same module structure. The separate file contains no additional `mod tests` wrapper.
+- Connection-level tests inside the crate can exercise the whole connection while retaining parent-private access; they need not move to Cargo's top-level `tests/` directory.
+- The guide's roughly 500-line target is a readability guideline, not a Rust convention; avoid arbitrary subdivisions of a cohesive test suite.
+
+### Source checkpoint
+
+- JSON-RPC envelope code has been extracted into `src/acp/json_rpc.rs`; `schema.rs` holds ACP wire types.
+- At review, `acp.rs` was 1,145 lines, `json_rpc.rs` 263, `message_handling.rs` 678, `schema.rs` 85, `session_registry.rs` 93, and `transport.rs` 64.
+- User reported moving `validate_request`, but the source visible to the assistant still contained it in `acp.rs`; that final move was not confirmed.
+- Assistant ran `cargo test --locked`: all 63 tests passed. No source files were edited by the assistant.
+
+### Exact resume point
+
+- Continue Task 6b Step 4. Suggested next mechanical move: extract whole-connection tests and their helpers from `acp.rs` into `src/acp/tests.rs`, preserving the `acp::tests` module identity.
+- Two tests in the reviewed parent module are not connection tests: `omitted_client_capabilities_uses_default` belongs with schema tests; `session_prompt_runs_model_and_retains_conversation` calls `dispatch_request` directly and belongs with message-handling tests.
+- Connection test helpers to move with their callers: `read_frame`, `send_frame`, `initialize`, `create_new_session`, and `valid_request_frame_with_size`.
+- Verify saved source for the reported `validate_request` move, then run `cargo test --locked` after the next extraction.
+
+### Unverified or deferred
+
+- The connection-test extraction was discussed, not confirmed implemented.
+- Step 4 is a reasonable checkpoint, not complete: framing still lives with routing in `read_frames`; the guide proposes transport reading one frame independently of handlers. File-size goals also remain outstanding.
+- Steps 2–3 remain deferred, not waived: router simplification, shared serialization, typed request errors, cancellation-handler extraction, and other listed cleanup remain unfinished. Task 7 lifecycle work stays paused.
+- Full premerge, black-box ACP suite, and baseline test-name comparison were not run during this part of the session. The passing test count alone does not establish preservation of all test names.
+
 ## Validation record
 
 Add one structured entry after validation:

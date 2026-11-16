@@ -1,3 +1,4 @@
+mod errors;
 mod json_rpc;
 mod message_handling;
 mod schema;
@@ -14,8 +15,9 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite};
 
 use tokio::sync::{RwLock, mpsc};
 
+use crate::acp::errors::RequestError;
 use crate::acp::json_rpc::{
-    MessageKind, Notification, Request, classify_message, validate_version,
+    ErrorResponse, MessageKind, Notification, Request, classify_message, validate_version,
 };
 use crate::acp::message_handling::dispatch_request;
 use crate::acp::schema::CancelParams;
@@ -105,12 +107,23 @@ where
         match classify_message(&message)? {
             MessageKind::Request => {
                 let request: Request<Value> = serde_json::from_str(&input)?;
+                let request_id = request.id.clone();
                 validate_request(&request)?;
 
-                if let Some(response) =
-                    dispatch_request(request, &mut state, &model, &sender).await?
-                {
-                    sender.send(response).await?;
+                match dispatch_request(request, &mut state, &model, &sender).await {
+                    Ok(maybe_value) => {
+                        if let Some(value) = maybe_value {
+                            sender.send(value).await?;
+                        }
+                    }
+                    Err(error) => {
+                        let response = match error {
+                            RequestError::InvalidParams => {
+                                ErrorResponse::invalid_params(request_id)
+                            }
+                        };
+                        sender.send(serde_json::to_value(response)?).await?;
+                    }
                 }
             }
             MessageKind::Notification => {
