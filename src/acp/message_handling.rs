@@ -7,7 +7,7 @@ use crate::{
     acp::{
         ConnectionState, Request,
         errors::RequestError::{self},
-        json_rpc::SuccessResponse,
+        json_rpc::{ErrorResponse, SuccessResponse},
         schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
     },
@@ -113,6 +113,7 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
     sender: &mpsc::Sender<Value>,
 ) -> Result<(), RequestError> {
     let value = request.params.unwrap_or(Value::Null);
+    let request_id = request.id.clone();
     let (session_id, prompt) = parse_prompt_params(Some(value))?;
 
     return match get_session(&state.sessions, &session_id).await {
@@ -121,7 +122,7 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
             let sender = sender.clone();
 
             tokio::spawn(async move {
-                issue_prompt(
+                let result = issue_prompt(
                     request.id,
                     &model,
                     &sender,
@@ -129,7 +130,13 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
                     &prompt,
                     session_id,
                 )
-                .await
+                .await;
+
+                if let Err(error) = result
+                    && let Ok(value) = serde_json::to_value(ErrorResponse::from(error, request_id))
+                {
+                    let _ = sender.send(value).await;
+                };
             });
 
             Ok(())
@@ -225,7 +232,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
 
             sender.send(session_update).await.map_err(|error| {
                 let message = format!("Request {} failed: {error}", request_id);
-                return RequestError::InternalError { message };
+                RequestError::InternalError { message }
             })?;
 
             let response = SuccessResponse {
@@ -241,7 +248,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 .await
                 .map_err(|error| {
                     let message = format!("Request {} failed: {error}", request_id);
-                    return RequestError::InternalError { message };
+                    RequestError::InternalError { message }
                 })?;
 
             Ok(())
@@ -262,7 +269,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 .await
                 .map_err(|error| {
                     let message = format!("Request {} failed: {error}", request_id);
-                    return RequestError::InternalError { message };
+                    RequestError::InternalError { message }
                 })?;
 
             Ok(())
