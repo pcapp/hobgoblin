@@ -8,7 +8,7 @@ use tokio::sync::Notify;
 
 use crate::{
     agent::Model,
-    scripted_model::TurnResponse::{Done, TimeGated},
+    scripted_model::TurnResponse::{Done, Error, TimeGated},
 };
 pub(crate) enum TurnResponse {
     Done {
@@ -18,6 +18,9 @@ pub(crate) enum TurnResponse {
         response: Value,
         started: Arc<Notify>,
         released: Arc<Notify>,
+    },
+    Error {
+        error: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 
@@ -53,6 +56,7 @@ impl Model for ScriptedModel {
 
         match response {
             Done { response } => Ok(response),
+            Error { error } => Err(error),
             TimeGated {
                 response,
                 started,

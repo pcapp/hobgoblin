@@ -294,7 +294,10 @@ mod test {
             session_registry::{SessionEntry, SessionId},
         },
         agent::Model,
-        scripted_model::{ScriptedModel, TurnResponse::Done},
+        scripted_model::{
+            ScriptedModel,
+            TurnResponse::{Done, Error},
+        },
         session::Session,
         test_messages::{assistant_reply, make_prompt_request},
     };
@@ -642,6 +645,63 @@ mod test {
         assert_eq!(
             session_guard.conversation.messages[1]["content"],
             "scripted answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_prompt_runs_sends_an_error_if_the_model_call_fails() {
+        let responses = [Error {
+            error: Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "simulated failure",
+            )),
+        }];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
+            let session_id = SessionId(uuid);
+
+            registry.insert(session_id, Arc::clone(&session_entry));
+        }
+        state.initialized = true;
+
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let value = make_prompt_request(3, session_id, "What is 1+1?");
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = Arc::new(model);
+        let (sender, mut receiver) = mpsc::channel(2);
+
+        let dispatch_result = dispatch_request(request, &mut state, &model, &sender)
+            .await
+            .expect("dispatch should succeed");
+
+        drop(sender);
+
+        assert!(
+            dispatch_result.is_none(),
+            "spawned prompt handling should send through the writer channel"
+        );
+
+        let error = tokio::time::timeout(tokio::time::Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("to complete in time")
+            .expect("to get an error");
+
+        assert_eq!(error["jsonrpc"], "2.0");
+        assert_eq!(error["id"], serde_json::json!(3));
+        assert!(
+            error.get("result").is_none(),
+            "a result response must not contain a result"
+        );
+        assert_eq!(
+            error["error"]["message"],
+            "Request 3 failed: simulated failure"
         );
     }
 
