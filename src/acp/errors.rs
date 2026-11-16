@@ -1,6 +1,10 @@
 #[derive(Debug)]
 pub enum RequestError {
+    ConnectionNotInitialized,
     InvalidParams,
+    ResourceNotFound,
+    MethodNotFound,
+    InternalError { message: String },
 }
 
 impl From<serde_json::Error> for RequestError {

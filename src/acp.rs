@@ -121,6 +121,18 @@ where
                             RequestError::InvalidParams => {
                                 ErrorResponse::invalid_params(request_id)
                             }
+                            RequestError::ConnectionNotInitialized => {
+                                ErrorResponse::connection_not_initialized(request_id)
+                            }
+                            RequestError::ResourceNotFound => {
+                                ErrorResponse::resource_not_found(request_id)
+                            }
+                            RequestError::MethodNotFound => {
+                                ErrorResponse::method_not_found(request_id)
+                            }
+                            RequestError::InternalError { message } => {
+                                ErrorResponse::internal_error(request_id, message.as_str())
+                            }
                         };
                         sender.send(serde_json::to_value(response)?).await?;
                     }

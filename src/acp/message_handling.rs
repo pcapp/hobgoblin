@@ -6,7 +6,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::{
     acp::{
         AcpError, ConnectionState, Request,
-        errors::RequestError,
+        errors::RequestError::{self},
         json_rpc::{ErrorResponse, SuccessResponse},
         schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
@@ -15,14 +15,16 @@ use crate::{
     session::Session,
 };
 
-fn build_success_response(request_id: Value, result: Value) -> Result<Value, serde_json::Error> {
+fn build_success_response(request_id: Value, result: Value) -> Result<Value, RequestError> {
     let response = SuccessResponse {
         jsonrpc: String::from("2.0"),
         id: request_id,
         result,
     };
 
-    serde_json::to_value(response)
+    serde_json::to_value(response).map_err(|e| RequestError::InternalError {
+        message: e.to_string(),
+    })
 }
 
 pub async fn dispatch_request<M: Model + Send + Sync + 'static>(
@@ -41,10 +43,7 @@ pub async fn dispatch_request<M: Model + Send + Sync + 'static>(
     }
 
     if !state.initialized {
-        let response = ErrorResponse::connection_not_initialized(request.id);
-        let response = serde_json::to_value(response)?;
-
-        return Ok(Some(response));
+        return Err(RequestError::ConnectionNotInitialized);
     }
 
     if request.method == "session/new" {
@@ -53,16 +52,11 @@ pub async fn dispatch_request<M: Model + Send + Sync + 'static>(
 
         Ok(Some(response))
     } else if request.method == "session/prompt" {
-        let result = match handle_prompt(request, state, model, sender).await {
-            Ok(()) => None,
-            Err(err) => Some(serde_json::to_value(err)?),
-        };
+        let () = handle_prompt(request, state, model, sender).await?;
 
-        Ok(result)
+        Ok(None)
     } else {
-        let response = ErrorResponse::method_not_found(request.id);
-        let response = serde_json::to_value(response)?;
-        Ok(Some(response))
+        Err(RequestError::MethodNotFound)
     }
 }
 
@@ -117,15 +111,9 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
     state: &mut ConnectionState,
     model: &Arc<M>,
     sender: &mpsc::Sender<Value>,
-) -> Result<(), ErrorResponse> {
+) -> Result<(), RequestError> {
     let value = request.params.unwrap_or(Value::Null);
-    let (session_id, prompt) = match parse_prompt_params(Some(value)) {
-        Ok(params) => params,
-        Err(_) => {
-            let response = ErrorResponse::invalid_params(request.id);
-            return Err(response);
-        }
-    };
+    let (session_id, prompt) = parse_prompt_params(Some(value))?;
 
     return match get_session(&state.sessions, &session_id).await {
         Some(session_entry) => {
@@ -146,22 +134,21 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
 
             Ok(())
         }
-        None => {
-            let response = ErrorResponse::resource_not_found(request.id);
-            Err(response)
-        }
+        None => Err(RequestError::ResourceNotFound),
     };
 }
 
-fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), ()> {
-    let PromptParams { session_id, prompt } =
-        serde_json::from_value(params.unwrap_or(Value::Null)).map_err(|_| ())?;
+fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), RequestError> {
+    let PromptParams { session_id, prompt } = serde_json::from_value(params.unwrap_or(Value::Null))
+        .map_err(|e| RequestError::InternalError {
+            message: e.to_string(),
+        })?;
 
     if prompt.is_empty() {
-        return Err(());
+        return Err(RequestError::InvalidParams);
     }
 
-    let prompt = join_text_blocks(prompt).ok_or(())?;
+    let prompt = join_text_blocks(prompt).ok_or(RequestError::InvalidParams)?;
 
     Ok((session_id, prompt))
 }
@@ -285,9 +272,6 @@ mod test {
         acp::{
             ConnectionState, Request,
             errors::RequestError,
-            json_rpc::{
-                CONNECTION_NOT_INITIALIZED_CODE, INVALID_PARAMS_CODE, RESOURCE_NOT_FOUND_CODE,
-            },
             message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
             schema::PromptContentBlock,
             session_registry::{SessionEntry, SessionId},
@@ -326,15 +310,9 @@ mod test {
 
         let response = dispatch_request(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("request should produce a response");
+            .expect_err("invalid connection error");
 
-        assert_eq!(response["id"], serde_json::json!(1));
-        assert_eq!(
-            response["error"]["code"],
-            serde_json::json!(CONNECTION_NOT_INITIALIZED_CODE)
-        );
-        assert!(response.get("result").is_none());
+        assert!(matches!(response, RequestError::ConnectionNotInitialized));
         assert!(state.sessions.read().await.is_empty());
     }
 
@@ -536,15 +514,9 @@ mod test {
 
         let result = dispatch_request(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("request should produce an error response");
+            .expect_err("bad prompt parameters");
 
-        assert_eq!(result["id"], serde_json::json!(3));
-        assert!(
-            result.get("result").is_none(),
-            "an error response must not contain a result"
-        );
-        assert_eq!(result["error"]["code"], INVALID_PARAMS_CODE);
+        assert!(matches!(result, RequestError::InvalidParams));
     }
 
     #[tokio::test]
@@ -560,15 +532,9 @@ mod test {
 
         let result = dispatch_request(request, &mut state, &model, &sender)
             .await
-            .expect("dispatch should succeed")
-            .expect("request should produce an error response");
+            .expect_err("session not found");
 
-        assert_eq!(result["id"], serde_json::json!(3));
-        assert!(
-            result.get("result").is_none(),
-            "an error response must not contain a result"
-        );
-        assert_eq!(result["error"]["code"], RESOURCE_NOT_FOUND_CODE);
+        assert!(matches!(result, RequestError::ResourceNotFound));
     }
 
     #[tokio::test]
