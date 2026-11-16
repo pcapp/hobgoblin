@@ -25,7 +25,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. 63 Rust tests pass; only `dispatch` triggers `too_many_lines`. Step 1 acceptance validation remains partially outstanding; next implementation is Step 2. |
+| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
 | [7 — Cancellation](07-cancellation.md) | paused | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
@@ -966,6 +966,42 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Step 4 is a reasonable checkpoint, not complete: framing still lives with routing in `read_frames`; the guide proposes transport reading one frame independently of handlers. File-size goals also remain outstanding.
 - Steps 2–3 remain deferred, not waived: router simplification, shared serialization, typed request errors, cancellation-handler extraction, and other listed cleanup remain unfinished. Task 7 lifecycle work stays paused.
 - Full premerge, black-box ACP suite, and baseline test-name comparison were not run during this part of the session. The passing test count alone does not establish preservation of all test names.
+
+## Session checkpoint — 2026-11-16 (Task 6b typed request errors; end of session)
+
+### Current understanding
+
+- `From<T>` receives one specific source type, not arbitrary error types or handler context. Keeping the request ID outside `RequestError` allows parsing errors to convert without inventing an ID; the response boundary supplies it.
+- `?` uses `From` to convert errors. Parameter deserialization should yield `InvalidParams`; response serialization should explicitly map to `InternalError`, even though both use `serde_json::Error`.
+- `matches!` asserts an enum variant without requiring `PartialEq`; guards can inspect fields.
+- A function without an explicit return type returns unit `()`. A trailing semicolon discards a match's value; serializing unit produces JSON `null`. Adding `-> Self` and returning the match fixed four response-envelope test failures.
+- Awaiting a spawned prompt immediately inside `handle_prompt` pauses the reader call chain. The task's result must be handled inside the spawned task to preserve reader responsiveness. Joining produces an outer task result and an inner application result.
+- Sending an error response is best-effort: a closed outgoing channel cannot deliver it. Request failures and transport failures still need distinct treatment.
+
+### Source checkpoint
+
+- `src/acp/errors.rs` contains all five request-error variants and a Serde-to-invalid-params conversion.
+- Initialize, new-session, and prompt handlers return typed request errors; `parse_prompt_params` no longer returns `()`.
+- `ErrorResponse::from(error, request_id)` in `src/acp/json_rpc.rs` centralizes response construction and is used by both `read_frames` and the spawned prompt wrapper.
+- The spawned wrapper handles `issue_prompt` failure by converting and queuing an error response without awaiting the task from the reader. Serialization/send failures in this wrapper are currently silently ignored.
+- `ScriptedModel` now supports `TurnResponse::Error`. The new `session_prompt_runs_sends_an_error_if_the_model_call_fails` test checks the outgoing-channel response's version, ID, message, and absence of `result`. The latest version includes a one-second receive timeout; it does not yet assert the error code.
+- At session close, HEAD and origin/master were `0706447` (`Fix a clippy suggestion.`); preceding commit `4134725` adds the model-failure test. The source tree was clean. `CODE_ASSESSMENT.md` remains untracked and was deliberately left untouched, not ignored.
+- No source files were edited by the assistant. Commit `b350c14` was committed and pushed earlier in the session at the user's request; subsequent commits are reflected above.
+
+### Exact resume point
+
+1. Finish the model-failure regression test by asserting error code `-32603`; correct its assertion wording from “a result response” to “an error response.” Rerun the focused test.
+2. Continue Step 3 acceptance review before adding the optional transport-error enum. In particular, review the broad pre-initialization guard against the guide's behavior-preservation requirement; it changes the prompt-before-initialize path. The current `CONNECTION_NOT_INITIALIZED_CODE` was also observed as `-32600`, whereas the guide names `-32001`; reconcile with baseline behavior and wire-level tests rather than assuming equivalence.
+3. Check response serialization within `issue_prompt`: bare Serde `?` still maps through `From` to `InvalidParams`, unlike `build_success_response`. Channel-send errors are currently mapped to `InternalError`; transport classification remains unfinished.
+4. Once these bounded checks are resolved, run the guide's full acceptance commands. Task 7 lifecycle work remains paused; do not expand into cancellation redesign during cleanup.
+
+### Validation and unverified work
+
+- Earlier full `cargo test --locked` runs passed 63 tests; an intermediate run exited 101 with 59 passing and four failing because the response conversion returned unit. After correction, all 63 passed again.
+- Focused `cargo test --locked session_prompt_runs_sends_an_error_if_the_model_call_fails` exited 0: one passed, 63 filtered out (before the final timeout/Clippy edits).
+- Session-close `cargo test --locked` at `0706447` exited 0: all 64 tests passed, including the latest timeout-based test, cancellation, and reader responsiveness. No report file was generated.
+- Full premerge, black-box ACP suite, and baseline test-name comparison were not run by the assistant this session. The new test intentionally increases the count; update the comparison baseline with that addition when validating.
+- The failure regression exercises the outgoing channel, not actual stdout delivery. Wire-level error-code preservation still needs explicit verification. Step 2/4 remaining cleanup requirements from the guide are not waived.
 
 ## Validation record
 
