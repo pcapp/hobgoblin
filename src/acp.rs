@@ -15,7 +15,6 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite};
 
 use tokio::sync::{RwLock, mpsc};
 
-use crate::acp::errors::RequestError;
 use crate::acp::json_rpc::{
     ErrorResponse, MessageKind, Notification, Request, classify_message, validate_version,
 };
@@ -117,23 +116,7 @@ where
                         }
                     }
                     Err(error) => {
-                        let response = match error {
-                            RequestError::InvalidParams => {
-                                ErrorResponse::invalid_params(request_id)
-                            }
-                            RequestError::ConnectionNotInitialized => {
-                                ErrorResponse::connection_not_initialized(request_id)
-                            }
-                            RequestError::ResourceNotFound => {
-                                ErrorResponse::resource_not_found(request_id)
-                            }
-                            RequestError::MethodNotFound => {
-                                ErrorResponse::method_not_found(request_id)
-                            }
-                            RequestError::InternalError { message } => {
-                                ErrorResponse::internal_error(request_id, message.as_str())
-                            }
-                        };
+                        let response = ErrorResponse::from(error, request_id);
                         sender.send(serde_json::to_value(response)?).await?;
                     }
                 }

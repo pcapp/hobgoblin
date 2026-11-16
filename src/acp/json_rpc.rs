@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::acp::AcpError;
+use crate::acp::{AcpError, errors::RequestError};
 
 pub const INVALID_PARAMS_CODE: i32 = -32602;
 pub const CONNECTION_NOT_INITIALIZED_CODE: i32 = -32600;
@@ -69,6 +69,20 @@ impl ErrorResponse {
 
     pub fn internal_error(id: Value, message: &str) -> Self {
         Self::new(id, INTERNAL_ERROR_CODE, message)
+    }
+
+    pub fn from(error: RequestError, request_id: Value) -> Self {
+        match error {
+            RequestError::InvalidParams => ErrorResponse::invalid_params(request_id),
+            RequestError::ConnectionNotInitialized => {
+                ErrorResponse::connection_not_initialized(request_id)
+            }
+            RequestError::ResourceNotFound => ErrorResponse::resource_not_found(request_id),
+            RequestError::MethodNotFound => ErrorResponse::method_not_found(request_id),
+            RequestError::InternalError { message } => {
+                ErrorResponse::internal_error(request_id, message.as_str())
+            }
+        }
     }
 }
 

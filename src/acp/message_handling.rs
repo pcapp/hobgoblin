@@ -5,9 +5,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     acp::{
-        AcpError, ConnectionState, Request,
+        ConnectionState, Request,
         errors::RequestError::{self},
-        json_rpc::{ErrorResponse, SuccessResponse},
+        json_rpc::SuccessResponse,
         schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
         session_registry::{SessionEntry, SessionId, get_session},
     },
@@ -140,9 +140,7 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
 
 fn parse_prompt_params(params: Option<Value>) -> Result<(SessionId, String), RequestError> {
     let PromptParams { session_id, prompt } = serde_json::from_value(params.unwrap_or(Value::Null))
-        .map_err(|e| RequestError::InternalError {
-            message: e.to_string(),
-        })?;
+        .map_err(|_| RequestError::InvalidParams)?;
 
     if prompt.is_empty() {
         return Err(RequestError::InvalidParams);
@@ -173,7 +171,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
     session_entry: Arc<SessionEntry>,
     prompt: &str,
     session_id: SessionId,
-) -> Result<(), AcpError> {
+) -> Result<(), RequestError> {
     let mut session_guard = session_entry.session.lock().await;
     let history_length = session_guard.conversation.messages.len();
     let (stop_sender, stop_receiver) = oneshot::channel::<()>();
@@ -206,10 +204,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 Err(error) => {
                     let message = format!("Request {} failed: {error}", request_id);
 
-                    let response = ErrorResponse::internal_error(request_id, &message);
-                    sender.send(serde_json::to_value(response)?).await?;
-
-                    return Ok(());
+                    return Err(RequestError::InternalError { message });
                 }
             };
 
@@ -228,34 +223,49 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 }
             });
 
-            sender.send(session_update).await?;
+            sender.send(session_update).await.map_err(|error| {
+                let message = format!("Request {} failed: {error}", request_id);
+                return RequestError::InternalError { message };
+            })?;
 
             let response = SuccessResponse {
                 jsonrpc: String::from("2.0"),
-                id: request_id,
+                id: request_id.clone(),
                 result: serde_json::json!({
                     "stopReason": "end_turn"
                 }),
             };
 
-            sender.send(serde_json::to_value(response)?).await?;
+            sender
+                .send(serde_json::to_value(response)?)
+                .await
+                .map_err(|error| {
+                    let message = format!("Request {} failed: {error}", request_id);
+                    return RequestError::InternalError { message };
+                })?;
 
-            Ok::<(), AcpError>(())
+            Ok(())
         }
         None => {
             session_guard.conversation.messages.truncate(history_length);
 
             let response = SuccessResponse {
                 jsonrpc: String::from("2.0"),
-                id: request_id,
+                id: request_id.clone(),
                 result: serde_json::json!({
                     "stopReason": "cancelled"
                 }),
             };
 
-            sender.send(serde_json::to_value(response)?).await?;
+            sender
+                .send(serde_json::to_value(response)?)
+                .await
+                .map_err(|error| {
+                    let message = format!("Request {} failed: {error}", request_id);
+                    return RequestError::InternalError { message };
+                })?;
 
-            Ok::<(), AcpError>(())
+            Ok(())
         }
     }
 }
@@ -697,7 +707,9 @@ mod test {
             ]
         });
 
-        parse_prompt_params(Some(params)).expect_err("malformed parameters should not parse");
+        let error =
+            parse_prompt_params(Some(params)).expect_err("malformed parameters should not parse");
+        assert!(matches!(error, RequestError::InvalidParams))
     }
 
     #[test]
@@ -708,6 +720,8 @@ mod test {
             "prompt": []
         });
 
-        parse_prompt_params(Some(params)).expect_err("empty prompt arrays should not parse");
+        let error =
+            parse_prompt_params(Some(params)).expect_err("empty prompt arrays should not parse");
+        assert!(matches!(error, RequestError::InvalidParams))
     }
 }
