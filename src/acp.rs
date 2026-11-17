@@ -246,8 +246,7 @@ mod tests {
             TurnResponse::{Done, TimeGated},
         },
         test_messages::{
-            assistant_reply, make_agent_message_chunk, make_cancel_notification, make_initialize,
-            make_prompt_request,
+            assistant_reply, make_agent_message_chunk, make_initialize, make_prompt_request,
         },
     };
 
@@ -544,17 +543,13 @@ mod tests {
 
         // Send the second message that we are going to cancel
         let request_id = client.get_next_request_id();
-        let second_prompt_request =
-            TestClient::make_prompt_request(request_id, &session_id, "second question");
+        let second_prompt_request = make_prompt_request(request_id, &session_id, "second question");
 
         client.send_frame(&second_prompt_request).await;
 
         started.notified().await;
 
-        let cancel_notification = make_cancel_notification(&session_id);
-
-        send_frame(&mut client.client_writer, &cancel_notification).await;
-        let result = read_frame(&mut client.client_reader).await;
+        let result = client.cancel(&session_id).await;
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
         assert_eq!(result["id"], serde_json::json!(4));

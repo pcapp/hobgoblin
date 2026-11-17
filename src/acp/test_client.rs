@@ -6,7 +6,10 @@ use tokio::io::{
 };
 use uuid::Uuid;
 
-use crate::acp::AcpError;
+use crate::{
+    acp::AcpError,
+    test_messages::{make_cancel_notification, make_prompt_request},
+};
 
 pub(super) struct TestClient {
     pub client_reader: BufReader<ReadHalf<DuplexStream>>,
@@ -126,26 +129,16 @@ impl TestClient {
 
     pub async fn prompt(&mut self, session_id: &str, prompt: &str) -> Value {
         let request_id = self.get_next_request_id();
-        let prompt_request = TestClient::make_prompt_request(request_id, session_id, prompt);
+        let prompt_request = make_prompt_request(request_id, session_id, prompt);
 
         self.send_frame(&prompt_request).await;
         self.read_frame().await
     }
 
-    pub fn make_prompt_request(id: u64, session_id: &str, prompt: &str) -> Value {
-        serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": id,
-          "method": "session/prompt",
-          "params": {
-            "sessionId": session_id,
-            "prompt": [
-              {
-                "type": "text",
-                "text": prompt
-              }
-            ]
-          }
-        })
+    pub async fn cancel(&mut self, session_id: &str) -> Value {
+        let cancel_notification = make_cancel_notification(session_id);
+
+        self.send_frame(&cancel_notification).await;
+        self.read_frame().await
     }
 }
