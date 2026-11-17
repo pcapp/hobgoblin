@@ -528,14 +528,9 @@ mod tests {
         });
 
         client.initialize().await;
-        let session_id =
-            create_new_session(&mut client.client_writer, &mut client.client_reader, 2).await;
+        let session_id = client.create_new_session().await;
 
-        // Send a prompt and verify the scripted model started processing.
-        let prompt_request = make_prompt_request(3, &session_id, "first question");
-
-        send_frame(&mut client.client_writer, &prompt_request).await;
-        let response = read_frame(&mut client.client_reader).await;
+        let response = client.prompt(&session_id, "first question").await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "first");
@@ -548,9 +543,11 @@ mod tests {
         assert!(response["error"].is_null());
 
         // Send the second message that we are going to cancel
-        let second_prompt_request = make_prompt_request(4, &session_id, "second question");
+        let request_id = client.get_next_request_id();
+        let second_prompt_request =
+            TestClient::make_prompt_request(request_id, &session_id, "second question");
 
-        send_frame(&mut client.client_writer, &second_prompt_request).await;
+        client.send_frame(&second_prompt_request).await;
 
         started.notified().await;
 
@@ -568,10 +565,7 @@ mod tests {
         assert_eq!(result["result"]["stopReason"], "cancelled");
 
         // Send the third prompt and check the history doesn't include the second cancelled prompt.
-        let third_prompt_request = make_prompt_request(5, &session_id, "third question");
-
-        send_frame(&mut client.client_writer, &third_prompt_request).await;
-        let response = read_frame(&mut client.client_reader).await;
+        let response = client.prompt(&session_id, "third question").await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "third");
