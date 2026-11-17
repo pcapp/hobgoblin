@@ -536,7 +536,7 @@ mod tests {
 
         assert_eq!(expected_response, response);
 
-        let response = read_frame(&mut client.client_reader).await;
+        let response = client.read_frame().await;
         assert_eq!(response["id"], 3);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
@@ -544,9 +544,7 @@ mod tests {
         // Send the second message that we are going to cancel
         let request_id = client.get_next_request_id();
         let second_prompt_request = make_prompt_request(request_id, &session_id, "second question");
-
         client.send_frame(&second_prompt_request).await;
-
         started.notified().await;
 
         let result = client.cancel(&session_id).await;
@@ -587,11 +585,7 @@ mod tests {
             ])
         );
 
-        client
-            .client_writer
-            .shutdown()
-            .await
-            .expect("to cleanly shutdown the writer");
+        client.shutdown().await;
 
         agent_task
             .await

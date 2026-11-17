@@ -141,4 +141,11 @@ impl TestClient {
         self.send_frame(&cancel_notification).await;
         self.read_frame().await
     }
+
+    pub async fn shutdown(&mut self) {
+        self.client_writer
+            .shutdown()
+            .await
+            .expect("to cleanly shutdown the writer");
+    }
 }
