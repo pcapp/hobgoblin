@@ -225,7 +225,7 @@ mod tests {
     use tokio::{
         io::{
             AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, DuplexStream,
-            ReadHalf, WriteHalf, duplex, split,
+            ReadHalf, duplex, split,
         },
         sync::Notify,
     };
@@ -260,39 +260,6 @@ mod tests {
         })
         .await
         .expect("to read a JSON RPC frame")
-    }
-
-    async fn send_frame(writer: &mut WriteHalf<DuplexStream>, data: &Value) {
-        let mut frame = serde_json::to_string(data).unwrap();
-        frame.push('\n');
-
-        writer
-            .write_all(frame.as_bytes())
-            .await
-            .expect("frame should serialize");
-    }
-
-    async fn initialize(
-        client_writer: &mut WriteHalf<DuplexStream>,
-        client_reader: &mut BufReader<ReadHalf<DuplexStream>>,
-    ) {
-        let initialize_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": 1,
-          "method": "initialize",
-          "params": {
-              "protocolVersion": 1,
-          }
-        });
-
-        send_frame(client_writer, &initialize_request).await;
-
-        let response = read_frame(client_reader).await;
-
-        validate_version(&response).expect("response should use JSON-RPC 2.0");
-        assert_eq!(response["id"], serde_json::json!(1));
-        assert!(response["error"].is_null());
-        assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
     }
 
     #[test]
@@ -820,20 +787,18 @@ mod tests {
           "params": {}
         });
 
-        let (client, agent) = duplex(1024);
-        let (agent_reader, agent_writer) = split(agent);
-        let (client_reader, mut client_writer) = split(client);
+        let mut client = TestClient::new();
+        let (agent_reader, agent_writer) = split(client.agent_end.take().unwrap());
 
         let agent_reader = BufReader::new(agent_reader);
-        let mut client_reader = BufReader::new(client_reader);
 
         let model = ScriptedModel::new(VecDeque::new());
 
         let agent_task = tokio::spawn(run_acp_with_model(agent_reader, agent_writer, model));
-        initialize(&mut client_writer, &mut client_reader).await;
+        client.initialize().await;
 
-        send_frame(&mut client_writer, &bad_request).await;
-        let result = read_frame(&mut client_reader).await;
+        client.send_frame(&bad_request).await;
+        let result = client.read_frame().await;
 
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
@@ -847,10 +812,7 @@ mod tests {
         assert_eq!(error["code"], METHOD_NOT_FOUND_CODE);
         assert_eq!(error["message"], "Method not found");
 
-        client_writer
-            .shutdown()
-            .await
-            .expect("client writer to shutdown");
+        client.shutdown().await;
 
         agent_task
             .await
