@@ -230,8 +230,6 @@ mod tests {
         sync::Notify,
     };
 
-    use uuid::Uuid;
-
     use crate::{
         acp::{
             MAX_FRAME_BYTES, Request,
@@ -245,9 +243,7 @@ mod tests {
             ScriptedModel,
             TurnResponse::{Done, TimeGated},
         },
-        test_messages::{
-            assistant_reply, make_agent_message_chunk, make_initialize, make_prompt_request,
-        },
+        test_messages::{assistant_reply, make_agent_message_chunk, make_initialize},
     };
 
     async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
@@ -297,39 +293,6 @@ mod tests {
         assert_eq!(response["id"], serde_json::json!(1));
         assert!(response["error"].is_null());
         assert_eq!(response["result"]["protocolVersion"], serde_json::json!(1));
-    }
-
-    async fn create_new_session(
-        client_writer: &mut WriteHalf<DuplexStream>,
-        client_reader: &mut BufReader<ReadHalf<DuplexStream>>,
-        request_id: u64,
-    ) -> String {
-        let new_session_request = serde_json::json!({
-          "jsonrpc": "2.0",
-          "id": request_id,
-          "method": "session/new",
-          "params": {
-            "cwd": "/tmp",
-            "mcpServers": []
-          }
-        });
-
-        send_frame(client_writer, &new_session_request).await;
-        let result = read_frame(client_reader).await;
-        validate_version(&result).expect("response should use JSON-RPC 2.0");
-
-        assert_eq!(result["id"], serde_json::json!(request_id));
-        assert!(
-            result.get("error").is_none(),
-            "a success response must not contain an error"
-        );
-
-        let session_id = result["result"]["sessionId"]
-            .as_str()
-            .expect("session/new should return a string session ID");
-        Uuid::parse_str(session_id).expect("a valid UUID");
-
-        session_id.to_string()
     }
 
     #[test]
@@ -449,44 +412,38 @@ mod tests {
 
         let model = ScriptedModel::new(VecDeque::from(responses));
 
-        let (client, agent) = duplex(1024);
-        let (agent_reader, agent_writer) = split(agent);
-        let (client_reader, mut client_writer) = split(client);
-        let reader = BufReader::new(agent_reader);
+        let mut client = TestClient::new();
+        let agent_end = client.agent_end.take().unwrap();
 
-        let mut client_reader = BufReader::new(client_reader);
+        let (agent_reader, agent_writer) = split(agent_end);
+
+        let reader = BufReader::new(agent_reader);
 
         let agent_task = tokio::spawn(run_acp_with_model(reader, agent_writer, model));
 
-        initialize(&mut client_writer, &mut client_reader).await;
-        let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
-
-        let prompt_request = make_prompt_request(3, &session_id, "What is 1+1?");
-
-        send_frame(&mut client_writer, &prompt_request).await;
+        client.initialize().await;
+        let session_id = client.create_new_session().await;
+        let request_id = client.prompt(&session_id, "What is 1+1?").await;
 
         started.notified().await;
 
-        let _ = create_new_session(&mut client_writer, &mut client_reader, 4).await;
+        let _ = client.create_new_session().await;
 
         released.notify_one();
 
-        let result = read_frame(&mut client_reader).await;
+        let result = client.read_frame().await;
 
         assert_eq!(result["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "scripted answer");
 
         assert_eq!(expected_response, result);
 
-        let response = read_frame(&mut client_reader).await;
-        assert_eq!(response["id"], 3);
+        let response = client.read_frame().await;
+        assert_eq!(response["id"], request_id);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
 
-        client_writer
-            .shutdown()
-            .await
-            .expect("client writer to shutdown");
+        client.shutdown().await;
 
         agent_task
             .await
@@ -529,28 +486,28 @@ mod tests {
         client.initialize().await;
         let session_id = client.create_new_session().await;
 
-        let response = client.prompt(&session_id, "first question").await;
+        let first_question_request_id = client.prompt(&session_id, "first question").await;
 
+        let response = client.read_frame().await;
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "first");
 
         assert_eq!(expected_response, response);
 
         let response = client.read_frame().await;
-        assert_eq!(response["id"], 3);
+        assert_eq!(response["id"], first_question_request_id);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
 
         // Send the second message that we are going to cancel
-        let request_id = client.get_next_request_id();
-        let second_prompt_request = make_prompt_request(request_id, &session_id, "second question");
-        client.send_frame(&second_prompt_request).await;
+        let second_prompt_request_id = client.prompt(&session_id, "second question").await;
         started.notified().await;
 
-        let result = client.cancel(&session_id).await;
+        client.cancel(&session_id).await;
+        let result = client.read_frame().await;
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
-        assert_eq!(result["id"], serde_json::json!(4));
+        assert_eq!(result["id"], serde_json::json!(second_prompt_request_id));
         assert!(
             result.get("error").is_none(),
             "a success response must not contain an error"
@@ -558,15 +515,16 @@ mod tests {
         assert_eq!(result["result"]["stopReason"], "cancelled");
 
         // Send the third prompt and check the history doesn't include the second cancelled prompt.
-        let response = client.prompt(&session_id, "third question").await;
+        let third_question_request_id = client.prompt(&session_id, "third question").await;
 
+        let response = client.read_frame().await;
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "third");
 
         assert_eq!(expected_response, response);
         let response = read_frame(&mut client.client_reader).await;
 
-        assert_eq!(response["id"], 5);
+        assert_eq!(response["id"], third_question_request_id);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
 

@@ -127,19 +127,19 @@ impl TestClient {
         session_id.to_string()
     }
 
-    pub async fn prompt(&mut self, session_id: &str, prompt: &str) -> Value {
+    pub async fn prompt(&mut self, session_id: &str, prompt: &str) -> u64 {
         let request_id = self.get_next_request_id();
         let prompt_request = make_prompt_request(request_id, session_id, prompt);
 
         self.send_frame(&prompt_request).await;
-        self.read_frame().await
+
+        request_id
     }
 
-    pub async fn cancel(&mut self, session_id: &str) -> Value {
+    pub async fn cancel(&mut self, session_id: &str) {
         let cancel_notification = make_cancel_notification(session_id);
 
         self.send_frame(&cancel_notification).await;
-        self.read_frame().await
     }
 
     pub async fn shutdown(&mut self) {
