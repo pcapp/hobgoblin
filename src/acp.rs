@@ -516,21 +516,18 @@ mod tests {
 
         let mut client = TestClient::new();
 
-        // let (client_end, agent_end) = duplex(1024);
-        // let (client_read, mut client_writer) = tokio::io::split(client_end);
-        let (agent_read, agent_write) = tokio::io::split(client.agent_end);
+        let agent_end = client.agent_end.take().unwrap();
+        let (agent_read, agent_write) = tokio::io::split(agent_end);
 
         let agent_input = tokio::io::BufReader::new(agent_read);
         let agent_output = BufWriter::new(agent_write);
-
-        // let mut client_reader = tokio::io::BufReader::new(client_read);
 
         let model_clone = model.clone();
         let agent_task = tokio::spawn(async move {
             run_acp_with_model(agent_input, agent_output, model_clone).await
         });
 
-        initialize(&mut client.client_writer, &mut client.client_reader).await;
+        client.initialize().await;
         let session_id =
             create_new_session(&mut client.client_writer, &mut client.client_reader, 2).await;
 
