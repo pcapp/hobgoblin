@@ -5,6 +5,9 @@ mod schema;
 mod session_registry;
 mod transport;
 
+#[cfg(test)]
+mod test_client;
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -235,6 +238,7 @@ mod tests {
             json_rpc::{INVALID_PARAMS_CODE, METHOD_NOT_FOUND_CODE},
             run_acp, run_acp_with_model,
             schema::InitializeParams,
+            test_client::TestClient,
             validate_version,
         },
         scripted_model::{
@@ -508,38 +512,40 @@ mod tests {
                 response: assistant_reply("third"),
             },
         ];
+        let model = Arc::new(ScriptedModel::new(VecDeque::from(responses)));
 
-        let (client_end, agent_end) = duplex(1024);
-        let (client_read, mut client_writer) = tokio::io::split(client_end);
-        let (agent_read, agent_write) = tokio::io::split(agent_end);
+        let mut client = TestClient::new();
+
+        // let (client_end, agent_end) = duplex(1024);
+        // let (client_read, mut client_writer) = tokio::io::split(client_end);
+        let (agent_read, agent_write) = tokio::io::split(client.agent_end);
 
         let agent_input = tokio::io::BufReader::new(agent_read);
         let agent_output = BufWriter::new(agent_write);
 
-        let mut client_reader = tokio::io::BufReader::new(client_read);
-
-        let model = Arc::new(ScriptedModel::new(VecDeque::from(responses)));
+        // let mut client_reader = tokio::io::BufReader::new(client_read);
 
         let model_clone = model.clone();
         let agent_task = tokio::spawn(async move {
             run_acp_with_model(agent_input, agent_output, model_clone).await
         });
 
-        initialize(&mut client_writer, &mut client_reader).await;
-        let session_id = create_new_session(&mut client_writer, &mut client_reader, 2).await;
+        initialize(&mut client.client_writer, &mut client.client_reader).await;
+        let session_id =
+            create_new_session(&mut client.client_writer, &mut client.client_reader, 2).await;
 
         // Send a prompt and verify the scripted model started processing.
         let prompt_request = make_prompt_request(3, &session_id, "first question");
 
-        send_frame(&mut client_writer, &prompt_request).await;
-        let response = read_frame(&mut client_reader).await;
+        send_frame(&mut client.client_writer, &prompt_request).await;
+        let response = read_frame(&mut client.client_reader).await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "first");
 
         assert_eq!(expected_response, response);
 
-        let response = read_frame(&mut client_reader).await;
+        let response = read_frame(&mut client.client_reader).await;
         assert_eq!(response["id"], 3);
         assert_eq!(response["result"]["stopReason"], "end_turn");
         assert!(response["error"].is_null());
@@ -547,14 +553,14 @@ mod tests {
         // Send the second message that we are going to cancel
         let second_prompt_request = make_prompt_request(4, &session_id, "second question");
 
-        send_frame(&mut client_writer, &second_prompt_request).await;
+        send_frame(&mut client.client_writer, &second_prompt_request).await;
 
         started.notified().await;
 
         let cancel_notification = make_cancel_notification(&session_id);
 
-        send_frame(&mut client_writer, &cancel_notification).await;
-        let result = read_frame(&mut client_reader).await;
+        send_frame(&mut client.client_writer, &cancel_notification).await;
+        let result = read_frame(&mut client.client_reader).await;
         validate_version(&result).expect("response should use JSON-RPC 2.0");
 
         assert_eq!(result["id"], serde_json::json!(4));
@@ -567,14 +573,14 @@ mod tests {
         // Send the third prompt and check the history doesn't include the second cancelled prompt.
         let third_prompt_request = make_prompt_request(5, &session_id, "third question");
 
-        send_frame(&mut client_writer, &third_prompt_request).await;
-        let response = read_frame(&mut client_reader).await;
+        send_frame(&mut client.client_writer, &third_prompt_request).await;
+        let response = read_frame(&mut client.client_reader).await;
 
         assert_eq!(response["params"]["sessionId"], session_id);
         let expected_response = make_agent_message_chunk(&session_id, "third");
 
         assert_eq!(expected_response, response);
-        let response = read_frame(&mut client_reader).await;
+        let response = read_frame(&mut client.client_reader).await;
 
         assert_eq!(response["id"], 5);
         assert_eq!(response["result"]["stopReason"], "end_turn");
@@ -595,7 +601,8 @@ mod tests {
             ])
         );
 
-        client_writer
+        client
+            .client_writer
             .shutdown()
             .await
             .expect("to cleanly shutdown the writer");

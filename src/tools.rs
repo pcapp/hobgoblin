@@ -105,7 +105,7 @@ fn write_file_tool(arguments: &str) -> Value {
     }
 }
 
-fn run_bash_tool(arguments: &str) -> Value {
+async fn run_bash_tool(arguments: &str) -> Value {
     let args: BashArgs = match serde_json::from_str(arguments) {
         Ok(args) => args,
         Err(err) => {
@@ -117,10 +117,11 @@ fn run_bash_tool(arguments: &str) -> Value {
     };
 
     tracing::debug!(command = %args.command, "Deserialized Bash arguments");
-    let output = match std::process::Command::new("bash")
+    let output = match tokio::process::Command::new("bash")
         .arg("-c")
         .arg(&args.command)
         .output()
+        .await
     {
         Ok(output) => output,
         Err(err) => {
@@ -138,11 +139,11 @@ fn run_bash_tool(arguments: &str) -> Value {
     })
 }
 
-pub fn execute_tool_call(call: &ToolCall) -> Value {
+pub async fn execute_tool_call(call: &ToolCall) -> Value {
     match call.function.name.as_str() {
         READ => read_file_tool(&call.function.arguments),
         WRITE => write_file_tool(&call.function.arguments),
-        BASH => run_bash_tool(&call.function.arguments),
+        BASH => run_bash_tool(&call.function.arguments).await,
 
         unimplemented_tool => json!({
           "ok": false,

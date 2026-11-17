@@ -143,7 +143,7 @@ pub async fn turn<M: Model>(
         }
 
         for tool_call in tool_calls {
-            let result = execute_tool_call(tool_call);
+            let result = execute_tool_call(tool_call).await;
 
             if let Some(error) = result["error"].as_str() {
                 eprintln!("Tool call error: {}", error);

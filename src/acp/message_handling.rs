@@ -289,6 +289,7 @@ mod test {
         acp::{
             ConnectionState, Request,
             errors::RequestError,
+            json_rpc::INTERNAL_ERROR_CODE,
             message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
             schema::PromptContentBlock,
             session_registry::{SessionEntry, SessionId},
@@ -692,9 +693,10 @@ mod test {
 
         assert_eq!(error["jsonrpc"], "2.0");
         assert_eq!(error["id"], serde_json::json!(3));
+        assert_eq!(error["error"]["code"], INTERNAL_ERROR_CODE);
         assert!(
             error.get("result").is_none(),
-            "a result response must not contain a result"
+            "an error response must not contain a result"
         );
         assert_eq!(
             error["error"]["message"],
