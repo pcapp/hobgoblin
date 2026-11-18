@@ -26,7 +26,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
 | [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
-| [7 — Cancellation](07-cancellation.md) | paused | Cancel a running prompt without reporting an error and leave the session reusable | `SessionEntry`, `oneshot` notification plumbing, and the prompt-task `select!` race are implemented; cancellation cleanup remains |
+| [7 — Cancellation](07-cancellation.md) | in progress | Cancel a running prompt without reporting an error and leave the session reusable | Model cancellation, history rollback, sender cleanup, and session reuse are implemented and tested. Async Bash execution uses `kill_on_drop(true)`; a PID-based test covers direct-child termination. All 65 Rust tests pass on 2026-11-17. Final acceptance and deferred limitations are recorded below. |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -1002,6 +1002,39 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Session-close `cargo test --locked` at `0706447` exited 0: all 64 tests passed, including the latest timeout-based test, cancellation, and reader responsiveness. No report file was generated.
 - Full premerge, black-box ACP suite, and baseline test-name comparison were not run by the assistant this session. The new test intentionally increases the count; update the comparison baseline with that addition when validating.
 - The failure regression exercises the outgoing channel, not actual stdout delivery. Wire-level error-code preservation still needs explicit verification. Step 2/4 remaining cleanup requirements from the guide are not waived.
+
+## Session checkpoint — 2026-11-17 (Task 7 direct-child cancellation)
+
+### Current understanding
+
+- Tokio process execution yields while waiting; making a function async alone does not make blocking operations nonblocking. Dropping a turn future requires `kill_on_drop(true)` to terminate its directly spawned child.
+- Scope chosen for now: direct-child termination, not process-group or descendant cleanup. `exec sleep 5` replaces Bash and preserves its PID, so the test targets this exact guarantee.
+- Test-client prompt and cancel operations are send-only. Prompt returns its allocated request ID; the test explicitly reads updates and completion. Cancellation is a notification, not a request with its own response.
+- PID-file polling establishes that the tool started before cancellation. String parsing uses `trim().parse::<u32>()`; filesystem errors are distinguished with `ErrorKind` match guards. An overall timeout bounds polling, with async sleep between retries.
+- A process-exit deadline must be shorter than natural command completion. Otherwise a test can pass even when cancellation does not kill the child.
+
+### Source checkpoint
+
+- `src/acp/test_client.rs` centralizes framing, bounded reads, initialization, session creation, request IDs, and send-only prompt/cancel helpers. The model cancellation test uses the client while retaining history and session-reuse assertions.
+- `src/tools.rs` uses `tokio::process::Command` with `kill_on_drop(true)` and awaits output; the tool call chain is asynchronous.
+- `src/acp.rs::prompt_cancelation_stops_tools` waits for the PID file, cancels, checks the original prompt response, then polls `kill -0` for disappearance with a one-second deadline against `sleep 5`.
+- `src/test_messages.rs` provides tool-call and assistant-with-tool-calls fixtures; tool arguments are JSON text stored as a string.
+- No source files were edited by the assistant. At wrap-up, git status showed only untracked `CODE_ASSESSMENT.md` and `prompt_cancelation_stops_tools.pid`; both were left untouched.
+
+### Validation
+
+- User reported the expected process-exit timeout after temporarily disabling `kill_on_drop(true)`, demonstrating the regression test catches the missing behavior.
+- Assistant confirmed `kill_on_drop(true)` restored and the process-exit deadline set to one second.
+- Final `cargo test --locked` passed: 65 tests, zero failures, 0.26 seconds. The expected `kill: ... No such process` diagnostic appears on stderr.
+- Full premerge, external ACP acceptance, and Zed cancellation smoke testing were not run this session.
+
+### Exact resume point and deferred work
+
+1. Continue Task 7 acceptance review rather than reimplementing cancellation. Confirm coverage for idle/unknown-session cancellation and any remaining guide requirements before marking complete.
+2. Process-existence helper currently treats every nonzero `kill -0` status as absence, including permission errors. PID-file setup uses a fixed relative filename and leaves it behind; isolated paths and cleanup remain test hardening work.
+3. Immediate cancellation can arrive before the spawned prompt task installs its sender and be ignored. Waiting for the PID file correctly scopes this test to a running tool but does not fix that separate startup race.
+4. Descendant termination/process groups remain explicitly deferred. Do not expand that scope without a new decision.
+5. Task 6b cleanup acceptance checks from the 2026-11-16 checkpoint remain outstanding; resuming cancellation did not waive them.
 
 ## Validation record
 
