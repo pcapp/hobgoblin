@@ -26,7 +26,7 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
 | [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
-| [7 — Cancellation](07-cancellation.md) | in progress | Cancel a running prompt without reporting an error and leave the session reusable | Model cancellation, history rollback, sender cleanup, and session reuse are implemented and tested. Async Bash execution uses `kill_on_drop(true)`; a PID-based test covers direct-child termination. All 65 Rust tests pass on 2026-11-17. Final acceptance and deferred limitations are recorded below. |
+| [7 — Cancellation](07-cancellation.md) | complete | Cancel a running prompt without reporting an error and leave the session reusable | All 68 Rust tests, premerge, build, and 8/8 external ACP cases pass on 2026-11-18. Coverage includes model cancellation, rollback/reuse, idle/unknown sessions, early sender registration, cancellation precedence over a ready model error, and direct-child tool termination. User-confirmed Zed cancellation/session-reuse smoke test also passed. Scope limitations are recorded below. |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -1035,6 +1035,61 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 3. Immediate cancellation can arrive before the spawned prompt task installs its sender and be ignored. Waiting for the PID file correctly scopes this test to a running tool but does not fix that separate startup race.
 4. Descendant termination/process groups remain explicitly deferred. Do not expand that scope without a new decision.
 5. Task 6b cleanup acceptance checks from the 2026-11-16 checkpoint remain outstanding; resuming cancellation did not waive them.
+
+## Session checkpoint — 2026-11-18 (Task 7 verification)
+
+### Current understanding
+
+- `tokio::spawn` schedules a task, not a new thread, and does not synchronously poll it. The default `#[tokio::test]` runtime is single-threaded. An `.await` yields only when the awaited operation returns Pending.
+- The registration regression test relies on isolated, uncontended locks and no yield between spawning and its synchronous `try_lock` / `is_some` assertion. The learner verified it fails when registration is moved inside the spawned task and passes with early registration.
+
+### Source checkpoint
+
+- `handle_prompt` creates one cancellation channel and registers its sender before spawning; `issue_prompt` receives that receiver, with no duplicate registration.
+- Idle and unknown-session cancellation are covered together with a subsequent successful prompt.
+- Existing model cancellation tests cover cancelled completion, history rollback, and session reuse; the tool test covers direct-child termination only.
+- No source files were edited by the assistant.
+
+### Validation
+
+- `./premerge.sh` exited 0: formatting, Python quality checks, Clippy with warnings denied, and all 67 Rust tests passed (0 failed).
+- `cargo build --locked` exited 0.
+- `uv run --project guides/acp/acp_test_suite guides/acp/acp_test_suite/test_handshake.py --report /tmp/acp-test-suite.json --executable target/debug/hobgoblin --acp` exited 0: 8/8 cases passed. Report: `/tmp/acp-test-suite.json`. This suite covers initialization and session creation, not cancellation or full ACP conformance.
+- Zed cancellation smoke testing was not performed.
+
+### Exact resume point and unverified work
+
+1. Task 7 remains in progress: review the requirement that cancellation must return `cancelled`, not a model error. `issue_prompt` currently uses unbiased `tokio::select!`; when both the cancellation receiver and model error are ready, the model branch can win. Existing tests block the model rather than exercising simultaneous readiness. Decide cancellation precedence and add a deterministic regression test before marking complete.
+2. Direct-child-only termination, overlapping-prompt policy, and PID-test hardening remain the previously recorded limitations. Early registration can replace an existing sender when prompts overlap; this is outside the idle-session startup regression's scope.
+3. Task 6b's separate structural and behavior-preservation acceptance review remains outstanding; passing premerge and the black-box suite does not alone complete it.
+
+## Session checkpoint — 2026-11-18 (Task 7 complete)
+
+### Current understanding
+
+- A oneshot sender is consumed by `send`; its receiver retains the sent signal even before being polled.
+- Unbiased `select!` randomizes polling order. With `biased;` and cancellation first, an already-ready cancellation wins over a ready model result (success or error). This does not retroactively cancel a turn that already completed.
+- The learner checked the precedence regression with biased model-first ordering (fails), then biased cancellation-first ordering (passes). Unlike removing `biased;`, reversing the biased order provides a controlled negative check.
+
+### Source and acceptance checkpoint
+
+- `issue_prompt` uses `biased;` with the cancellation branch first.
+- `issue_prompt_favors_cancellation_in_race_tie` supplies a pre-signalled receiver and immediately failing scripted model, asserts the handler succeeds, and checks the original request's JSON-RPC `cancelled` response with no error.
+- Required automated Task 7 behavior is covered: model cancellation; direct-child tool termination; silent idle/unknown cancellation; history rollback and session reuse; registration before task execution; cancellation/error precedence. Current output sends the normal update before completion; cancellation emits only its completion response.
+- Task 7 is complete for the agreed single-active-turn, direct-child scope. Overlapping-prompt policy, process-group/descendant termination, and PID-test hardening remain deferred. Task 6b's independent acceptance review is not marked complete by this checkpoint.
+
+### Final validation
+
+- `./premerge.sh` exited 0: formatting, Python checks, Clippy with warnings denied, and all 68 Rust tests passed.
+- `cargo build --locked` exited 0.
+- External ACP command from the preceding checkpoint exited 0 again; report `/tmp/acp-test-suite.json` covers the 8 initialization/session-creation cases, not cancellation or full conformance.
+- Zed cancellation smoke test subsequently passed (user-confirmed): requested a 60-second timer, pressed Stop while the turn was running, then asked “What was my question?” in the same session. The follow-up received a response without knowledge of the cancelled prompt, consistent with full-turn history rollback and session reuse. The screenshot/user report does not independently establish process termination; the automated direct-child test covers that guarantee.
+- No Rust source was edited by the assistant.
+
+### Exact resume point
+
+- Task 7 implementation, automated verification, and the user-confirmed Zed cancellation/session-reuse smoke test are complete.
+- Before starting Task 8, reconcile the outstanding Task 6b acceptance items; then review `08-turn-events.md` against the current source, raising decisions incrementally.
 
 ## Validation record
 

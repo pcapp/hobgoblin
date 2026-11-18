@@ -197,13 +197,14 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
     let history_length = session_guard.conversation.messages.len();
 
     let turn_result = tokio::select! {
-        result = agent::turn(model.as_ref(), &mut session_guard, prompt) => {
-                Some(result)
-            }
+        biased;
+        _ = stop_receiver => {
+            None
+        }
 
-            _ = stop_receiver => {
-                None
-            }
+        result = agent::turn(model.as_ref(), &mut session_guard, prompt) => {
+            Some(result)
+        }
     };
 
     {
@@ -314,7 +315,7 @@ mod test {
     use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
     use serde_json::Value;
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
     use uuid::Uuid;
 
     use crate::{
@@ -323,7 +324,8 @@ mod test {
             errors::RequestError,
             json_rpc::INTERNAL_ERROR_CODE,
             message_handling::{
-                dispatch_request, handle_prompt, join_text_blocks, parse_prompt_params,
+                dispatch_request, handle_prompt, issue_prompt, join_text_blocks,
+                parse_prompt_params,
             },
             schema::PromptContentBlock,
             session_registry::{SessionEntry, SessionId},
@@ -739,8 +741,7 @@ mod test {
     }
 
     // Notes:
-    // Tokio runs each test in a single thread.
-    // One runtime thread:
+    // This test uses #[tokio::test]s default singe-threaded runtime.
     // test
     //   → handle_prompt
     //       → queue spawned task
@@ -783,6 +784,59 @@ mod test {
                 .expect("to get the lock");
             assert!(guard.is_some())
         }
+    }
+
+    #[tokio::test]
+    async fn issue_prompt_favors_cancellation_in_race_tie() {
+        let responses = [Error {
+            error: Box::new(std::io::Error::other("scripted model error")),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
+        let string_session_id = "00000000-0000-0000-0000-000000000001";
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let uuid = Uuid::parse_str(string_session_id).expect("to be a valid UUID");
+        let session_id = SessionId(uuid);
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            registry.insert(session_id.clone(), Arc::clone(&session_entry));
+        }
+        state.initialized = true;
+
+        let value = make_prompt_request(3, string_session_id, "What is 1+1?");
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = Arc::new(model);
+        let (sender, mut receiver) = mpsc::channel(2);
+
+        let (stop_sender, stop_receiver) = oneshot::channel::<()>();
+        stop_sender.send(()).expect("to send the signal");
+
+        let result = issue_prompt(
+            request.id.clone(),
+            &model,
+            &sender,
+            session_entry,
+            "What is 1+1?",
+            session_id,
+            stop_receiver,
+        )
+        .await;
+        result.expect("to not be an error");
+
+        let response = receiver
+            .recv()
+            .await
+            .expect("prompt should send a final response");
+
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["id"], request.id);
+        assert!(
+            response.get("error").is_none(),
+            "a response response must not contain an error"
+        );
+        assert_eq!(response["result"]["stopReason"], "cancelled");
     }
 
     #[test]
