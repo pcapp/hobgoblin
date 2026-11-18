@@ -281,20 +281,24 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
 
 pub async fn handle_notification(notification: Notification<Value>, state: &mut ConnectionState) {
     if notification.method == "session/cancel" {
-        let params = notification.params.unwrap_or(Value::Null);
+        handle_cancel(notification, state).await
+    }
+}
 
-        // todo: What does ACP say about notification errors?
-        if let Ok(params) = serde_json::from_value::<CancelParams>(params)
-            && let Some(session) = get_session(&state.sessions, &params.session_id).await
-        {
-            let turn_stop = {
-                let mut guard = session.active_turn_stop.lock().await;
-                guard.take()
-            };
+async fn handle_cancel(notification: Notification<Value>, state: &mut ConnectionState) {
+    let params = notification.params.unwrap_or(Value::Null);
 
-            if let Some(turn_stop) = turn_stop {
-                let _ = turn_stop.send(());
-            }
+    // todo: What does ACP say about notification errors?
+    if let Ok(params) = serde_json::from_value::<CancelParams>(params)
+        && let Some(session) = get_session(&state.sessions, &params.session_id).await
+    {
+        let turn_stop = {
+            let mut guard = session.active_turn_stop.lock().await;
+            guard.take()
+        };
+
+        if let Some(turn_stop) = turn_stop {
+            let _ = turn_stop.send(());
         }
     }
 }
