@@ -1,5 +1,17 @@
 use serde_json::Value;
 
+pub fn make_tool_call(id: &str, name: &str, args: &str) -> Value {
+    serde_json::json!(
+    {
+      "id": id,
+      "type": "function",
+      "function": {
+        "name": name,
+        "arguments": args
+      }
+    })
+}
+
 pub fn assistant_reply(text: &str) -> Value {
     serde_json::json!({
         "choices": [{
@@ -7,6 +19,18 @@ pub fn assistant_reply(text: &str) -> Value {
                 "role": "assistant",
                 "content": text,
                 "tool_calls": null
+            }
+        }]
+    })
+}
+
+pub fn assistant_reply_with_tool_calls(text: &str, tool_calls: Vec<Value>) -> Value {
+    serde_json::json!({
+        "choices": [{
+            "message": {
+                "role": "assistant",
+                "content": text,
+                "tool_calls": tool_calls
             }
         }]
     })

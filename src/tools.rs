@@ -120,6 +120,7 @@ async fn run_bash_tool(arguments: &str) -> Value {
     let output = match tokio::process::Command::new("bash")
         .arg("-c")
         .arg(&args.command)
+        .kill_on_drop(true)
         .output()
         .await
     {

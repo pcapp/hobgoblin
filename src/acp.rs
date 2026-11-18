@@ -223,11 +223,13 @@ mod tests {
 
     use serde_json::Value;
     use tokio::{
+        fs,
         io::{
             AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter, DuplexStream,
             ReadHalf, duplex, split,
         },
         sync::Notify,
+        time::{sleep, timeout},
     };
 
     use crate::{
@@ -243,7 +245,10 @@ mod tests {
             ScriptedModel,
             TurnResponse::{Done, TimeGated},
         },
-        test_messages::{assistant_reply, make_agent_message_chunk, make_initialize},
+        test_messages::{
+            assistant_reply, assistant_reply_with_tool_calls, make_agent_message_chunk,
+            make_initialize, make_tool_call,
+        },
     };
 
     async fn read_frame(reader: &mut BufReader<ReadHalf<DuplexStream>>) -> Value {
@@ -509,6 +514,101 @@ mod tests {
                 {"role": "user", "content": "third question"}
             ])
         );
+
+        client.shutdown().await;
+
+        agent_task
+            .await
+            .expect("agent task should join")
+            .expect("ACP transport should shutdown cleanly");
+    }
+
+    async fn wait_for_pid(filename: &str) -> u32 {
+        timeout(Duration::from_secs(10), async {
+            loop {
+                match fs::read_to_string(filename).await {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => panic!("Unable to read the PID file: {error}"),
+                    Ok(pid) => {
+                        if let Ok(pid) = pid.trim().parse::<u32>() {
+                            return pid;
+                        }
+                    }
+                }
+                sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .expect("tool should write a valid PID within 10 seconds")
+    }
+
+    async fn wait_for_process_to_die(pid: u32) {
+        timeout(Duration::from_secs(1), async {
+            loop {
+                let status = tokio::process::Command::new("kill")
+                    .arg("-0")
+                    .arg(pid.to_string())
+                    .status()
+                    .await
+                    .expect("to issue the kill command");
+
+                if !status.success() {
+                    return;
+                }
+
+                sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .expect("for the process to be gone");
+    }
+
+    #[tokio::test]
+    async fn prompt_cancelation_stops_tools() {
+        let pid_filename = "prompt_cancelation_stops_tools.pid";
+
+        match fs::remove_file(pid_filename).await {
+            Ok(_) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(_) => panic!("Unable to remove the old PID file."),
+        }
+
+        let args = format!("{{\"command\": \"echo $$ > {pid_filename}; exec sleep 5\"}}");
+        let sleep_call = make_tool_call("sleep_call_id", "Bash", args.as_str());
+
+        let responses = [Done {
+            response: assistant_reply_with_tool_calls("first", vec![sleep_call]),
+        }];
+        let model = Arc::new(ScriptedModel::new(VecDeque::from(responses)));
+
+        let mut client = TestClient::new();
+
+        let agent_end = client.agent_end.take().unwrap();
+        let (agent_read, agent_write) = tokio::io::split(agent_end);
+
+        let agent_input = tokio::io::BufReader::new(agent_read);
+        let agent_output = BufWriter::new(agent_write);
+
+        let model_clone = model.clone();
+        let agent_task = tokio::spawn(async move {
+            run_acp_with_model(agent_input, agent_output, model_clone).await
+        });
+
+        client.initialize().await;
+        let session_id = client.create_new_session().await;
+
+        let prompt_request_id = client.prompt(&session_id, "first question").await;
+
+        let pid = wait_for_pid(pid_filename).await;
+
+        client.cancel(&session_id).await;
+
+        let response = client.read_frame().await;
+        assert_eq!(response["id"], prompt_request_id);
+        assert_eq!(response["result"]["stopReason"], "cancelled");
+        assert!(response["error"].is_null());
+
+        wait_for_process_to_die(pid).await;
 
         client.shutdown().await;
 
