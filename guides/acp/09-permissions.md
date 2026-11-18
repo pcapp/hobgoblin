@@ -1,6 +1,6 @@
-# Task 8 — Ask the client for permission
+# Task 9 — Ask the client for permission
 
-> **Draft.** Refine this from the Task 7 code before starting.
+> **Draft.** Refine this from the Task 8 code before starting.
 
 ## End goal
 
@@ -31,7 +31,7 @@ The usual fix is a map from outgoing request ID to a `tokio::sync::oneshot::Send
 
 ## Required behavior
 
-- Permission requests carry the session ID, the tool call ID, and at least allow-once and reject-once options.
+- Permission requests carry the session ID, the tool call ID reported in Task 8, and at least allow-once and reject-once options.
 - `selected` with an allow option runs the tool; a reject option or `cancelled` outcome does not.
 - The reader routes responses without waiting for any turn.
 

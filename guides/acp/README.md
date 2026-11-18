@@ -37,8 +37,8 @@ The core owns agent behavior. Each frontend owns its input and presentation:
 6. [Run a prompt turn over ACP](06-session-prompt.md) (draft)
    - 6b. [Clean up the ACP module](06b-cleanup.md): inserted while Task 7 is paused
 7. [Cancel a prompt turn](07-cancellation.md) (draft; paused for 6b)
-8. [Ask the client for permission](08-permissions.md) (draft)
-9. [Report tool calls to the client](09-tool-call-updates.md) (draft)
+8. [Report turn progress to the client](08-turn-events.md) (draft)
+9. [Ask the client for permission](09-permissions.md) (draft)
 
 Tasks 4–9 each add one async concept, introduced by the ACP feature that needs it. They are drafts: refine each one from the previous task's code before starting it.
 

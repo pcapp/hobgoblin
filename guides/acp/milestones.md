@@ -12,8 +12,8 @@ The immediate goal is to build ACP support through the real application without 
 | [6 — Prompt turn](06-session-prompt.md) | `session/prompt` runs the model and reports `agent_message_chunk`; **usable in Zed** | One task per request, `Send` futures and errors, exclusive access to a conversation | Scripted-model duplex tests |
 | [6b — Cleanup](06b-cleanup.md) | Same behavior; `acp.rs` split into modules, `dispatch` is a short router, request errors are typed, tests use shared helpers | Module tree and visibility, error enums and `From`/`?`, `#[cfg(test)]` support modules | Unchanged test-name list, `too_many_lines` clean, `./premerge.sh` |
 | [7 — Cancellation](07-cancellation.md) (draft; paused for 6b) | `session/cancel` ends a turn with `stopReason: "cancelled"` | `select!`, cancellation by dropping, cancellation safety, `tokio::process` | Mid-turn cancellation tests |
-| [8 — Permissions](08-permissions.md) (draft) | Tools ask the client via `session/request_permission` | Agent-to-client requests, pending-request table, `oneshot`, `timeout` | Deadlock-proof duplex tests |
-| [9 — Tool call updates](09-tool-call-updates.md) (draft) | Zed shows tool calls and their status; **portfolio demo** | Core events versus frontend presentation | Update-sequence tests |
+| [8 — Turn events](08-turn-events.md) (draft) | Zed shows assistant text and tool calls as the turn runs; **portfolio demo** | Core events versus frontend presentation, update ordering | Update-sequence tests |
+| [9 — Permissions](09-permissions.md) (draft) | Tools ask the client via `session/request_permission` | Agent-to-client requests, pending-request table, `oneshot`, `timeout` | Deadlock-proof duplex tests |
 
 ## Hardening backlog
 

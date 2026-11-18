@@ -250,7 +250,7 @@ The `sed` drops module paths, so tests that move from `acp::tests` to `acp::hand
 | Cancel can't interrupt a running tool; blocking `std::process` ties up a runtime thread | `tools.rs:120`, `agent.rs:146` | Task 7 (already in its guide) |
 | A `session/cancel` that arrives before the prompt task installs its stop sender is dropped | `acp.rs:566-573` | Task 7 |
 | The spawned prompt task's `Result` is discarded, so its errors vanish | `acp.rs:565` | Task 7, or Step 2 here if the extracted function makes it a one-liner |
-| Bash tool returns `stdout`/`stderr` as byte arrays; `ok: true` ignores the exit status | `tools.rs:134-138` | Task 9 (tool call updates), or earlier |
+| Bash tool returns `stdout`/`stderr` as byte arrays; `ok: true` ignores the exit status | `tools.rs:134-138` | Task 8 (turn events), or earlier |
 | Tools run in the process directory, not the session's `cwd` | `session.rs:15`, `tools.rs` | Task 8 or 9 |
 | Bash tool error says "Invalid Write arguments"; "Could run" is missing "not"; Write returns `"content": null` | `tools.rs:114`, `:129`, `:97` | Any time |
 
@@ -272,4 +272,4 @@ The `sed` drops module paths, so tests that move from `acp::tests` to `acp::hand
 
 **Skip for now:**
 
-9. CodeCrafters leftovers (`.codecrafters/`, `codecrafters.yml`, `your_program.sh`), pedantic Clippy warnings, and a Zed demo GIF. The GIF belongs to the Task 9 portfolio demo.
+9. CodeCrafters leftovers (`.codecrafters/`, `codecrafters.yml`, `your_program.sh`), pedantic Clippy warnings, and a Zed demo GIF. The GIF belongs to the Task 8 portfolio demo.
