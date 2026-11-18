@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_cancel_active_prompts() {
+    async fn cancel_active_prompts() {
         let started = Arc::new(Notify::new());
         let released = Arc::new(Notify::new());
         let responses = [
@@ -496,6 +496,56 @@ mod tests {
                 {"role": "user", "content": "third question"}
             ])
         );
+
+        client.shutdown().await;
+
+        agent_task
+            .await
+            .expect("agent task should join")
+            .expect("ACP transport should shutdown cleanly");
+    }
+
+    #[tokio::test]
+    async fn cancel_ignores_requests_for_unknown_and_idle_sessions() {
+        let responses = [Done {
+            response: assistant_reply("scripted answer"),
+        }];
+        let model = Arc::new(ScriptedModel::new(VecDeque::from(responses)));
+
+        let mut client = TestClient::new();
+
+        let agent_end = client.agent_end.take().unwrap();
+        let (agent_read, agent_write) = tokio::io::split(agent_end);
+
+        let agent_input = tokio::io::BufReader::new(agent_read);
+        let agent_output = BufWriter::new(agent_write);
+
+        let model_clone = model.clone();
+        let agent_task = tokio::spawn(async move {
+            run_acp_with_model(agent_input, agent_output, model_clone).await
+        });
+
+        client.initialize().await;
+        let session_id = client.create_new_session().await;
+        client.cancel(&session_id).await;
+
+        let bogus_session_id = "00000000-0000-0000-0000-000000000001";
+        client.cancel(bogus_session_id).await;
+
+        assert_ne!(session_id, bogus_session_id);
+
+        let prompt_request_id = client.prompt(&session_id, "What is 1+1?").await;
+
+        let response = client.read_frame().await;
+        assert_eq!(response["params"]["sessionId"], session_id);
+        let expected_response = make_agent_message_chunk(&session_id, "scripted answer");
+
+        assert_eq!(expected_response, response);
+        let response = read_frame(&mut client.client_reader).await;
+
+        assert_eq!(response["id"], prompt_request_id);
+        assert_eq!(response["result"]["stopReason"], "end_turn");
+        assert!(response["error"].is_null());
 
         client.shutdown().await;
 
