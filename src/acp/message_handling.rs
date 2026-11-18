@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{
+    mpsc,
+    oneshot::{self, Receiver},
+};
 
 use crate::{
     acp::{
@@ -123,6 +126,13 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
             let model = model.clone();
             let sender = sender.clone();
 
+            let (stop_sender, stop_receiver) = oneshot::channel::<()>();
+
+            {
+                let mut turn_stop = session_entry.active_turn_stop.lock().await;
+                turn_stop.replace(stop_sender);
+            }
+
             tokio::spawn(async move {
                 let result = issue_prompt(
                     request.id,
@@ -131,6 +141,7 @@ pub async fn handle_prompt<M: Model + Send + Sync + 'static>(
                     session_entry,
                     &prompt,
                     session_id,
+                    stop_receiver,
                 )
                 .await;
 
@@ -180,15 +191,10 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
     session_entry: Arc<SessionEntry>,
     prompt: &str,
     session_id: SessionId,
+    stop_receiver: Receiver<()>,
 ) -> Result<(), RequestError> {
     let mut session_guard = session_entry.session.lock().await;
     let history_length = session_guard.conversation.messages.len();
-    let (stop_sender, stop_receiver) = oneshot::channel::<()>();
-
-    {
-        let mut turn_stop = session_entry.active_turn_stop.lock().await;
-        turn_stop.replace(stop_sender);
-    }
 
     let turn_result = tokio::select! {
         result = agent::turn(model.as_ref(), &mut session_guard, prompt) => {
@@ -316,7 +322,9 @@ mod test {
             ConnectionState, Request,
             errors::RequestError,
             json_rpc::INTERNAL_ERROR_CODE,
-            message_handling::{dispatch_request, join_text_blocks, parse_prompt_params},
+            message_handling::{
+                dispatch_request, handle_prompt, join_text_blocks, parse_prompt_params,
+            },
             schema::PromptContentBlock,
             session_registry::{SessionEntry, SessionId},
         },
@@ -728,6 +736,53 @@ mod test {
             error["error"]["message"],
             "Request 3 failed: simulated failure"
         );
+    }
+
+    // Notes:
+    // Tokio runs each test in a single thread.
+    // One runtime thread:
+    // test
+    //   → handle_prompt
+    //       → queue spawned task
+    //       → return
+    //   → try_lock and assert
+    // This test works because handle_prompt does not yield to tokio
+    // after spawning the task for issue_prompt. It allows the test
+    // to immediately check the session cancellation signal.
+    #[tokio::test]
+    async fn session_prompt_registers_cancellation_before_task_runs() {
+        let responses = [Done {
+            response: assistant_reply("shouldn't see me"),
+        }];
+        let model = ScriptedModel::new(VecDeque::from(responses));
+        let session_id = "00000000-0000-0000-0000-000000000001";
+        let session_entry = Arc::new(SessionEntry::new(Session::empty(PathBuf::from("/tmp"))));
+
+        let mut state = ConnectionState::new();
+        {
+            let mut registry = state.sessions.write().await;
+            let uuid = Uuid::parse_str(session_id).expect("to be a valid UUID");
+            let session_id = SessionId(uuid);
+
+            registry.insert(session_id, Arc::clone(&session_entry));
+        }
+        state.initialized = true;
+
+        let value = make_prompt_request(3, session_id, "What is 1+1?");
+        let request: Request<Value> = serde_json::from_value(value).expect("to parse as JSON-RPC");
+        let model = Arc::new(model);
+        let (sender, _receiver) = mpsc::channel(2);
+
+        let result = handle_prompt(request, &mut state, &model, &sender).await;
+        result.expect("to be successful");
+
+        {
+            let guard = session_entry
+                .active_turn_stop
+                .try_lock()
+                .expect("to get the lock");
+            assert!(guard.is_some())
+        }
     }
 
     #[test]
