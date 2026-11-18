@@ -7,8 +7,10 @@ use crate::{
     acp::{
         ConnectionState, Request,
         errors::RequestError::{self},
-        json_rpc::{ErrorResponse, SuccessResponse},
-        schema::{InitializeParams, NewSessionParams, PromptContentBlock, PromptParams},
+        json_rpc::{ErrorResponse, Notification, SuccessResponse},
+        schema::{
+            CancelParams, InitializeParams, NewSessionParams, PromptContentBlock, PromptParams,
+        },
         session_registry::{SessionEntry, SessionId, get_session},
     },
     agent::{self, Model},
@@ -273,6 +275,26 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 })?;
 
             Ok(())
+        }
+    }
+}
+
+pub async fn handle_notification(notification: Notification<Value>, state: &mut ConnectionState) {
+    if notification.method == "session/cancel" {
+        let params = notification.params.unwrap_or(Value::Null);
+
+        // todo: What does ACP say about notification errors?
+        if let Ok(params) = serde_json::from_value::<CancelParams>(params)
+            && let Some(session) = get_session(&state.sessions, &params.session_id).await
+        {
+            let turn_stop = {
+                let mut guard = session.active_turn_stop.lock().await;
+                guard.take()
+            };
+
+            if let Some(turn_stop) = turn_stop {
+                let _ = turn_stop.send(());
+            }
         }
     }
 }

@@ -21,9 +21,8 @@ use tokio::sync::{RwLock, mpsc};
 use crate::acp::json_rpc::{
     ErrorResponse, MessageKind, Notification, Request, classify_message, validate_version,
 };
-use crate::acp::message_handling::dispatch_request;
-use crate::acp::schema::CancelParams;
-use crate::acp::session_registry::{SessionRegistry, get_session};
+use crate::acp::message_handling::{dispatch_request, handle_notification};
+use crate::acp::session_registry::SessionRegistry;
 use crate::acp::transport::write_frames;
 use crate::agent::{Model, OpenRouterModel};
 
@@ -126,24 +125,7 @@ where
             }
             MessageKind::Notification => {
                 let notification: Notification<Value> = serde_json::from_str(&input)?;
-                if notification.method == "session/cancel" {
-                    let params = notification.params.unwrap_or(Value::Null);
-
-                    // todo: What does ACP say about notification errors?
-                    if let Ok(params) = serde_json::from_value::<CancelParams>(params)
-                        && let Some(session) =
-                            get_session(&state.sessions, &params.session_id).await
-                    {
-                        let turn_stop = {
-                            let mut guard = session.active_turn_stop.lock().await;
-                            guard.take()
-                        };
-
-                        if let Some(turn_stop) = turn_stop {
-                            let _ = turn_stop.send(());
-                        }
-                    }
-                }
+                handle_notification(notification, &mut state).await;
             }
 
             MessageKind::Response => {}
