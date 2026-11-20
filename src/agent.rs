@@ -10,6 +10,50 @@ use async_openai::config::OpenAIConfig;
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
+#[allow(dead_code)]
+pub(crate) trait AgentEventSink {
+    async fn emit(&mut self, event: AgentEvent);
+}
+
+#[allow(dead_code)]
+pub enum ToolKind {
+    Read,
+    Edit,
+    Execute,
+}
+
+pub(crate) struct NoOpAgentEventSink {}
+
+impl AgentEventSink for NoOpAgentEventSink {
+    async fn emit(&mut self, _event: AgentEvent) {}
+}
+
+#[allow(dead_code)]
+pub enum ReplyContent {
+    TextContent { text: String },
+}
+
+#[allow(dead_code)]
+pub enum AgentEvent {
+    AssistantText {
+        message: String,
+    },
+    ToolRequested {
+        tool_call_id: String,
+        title: String,
+        name: String,
+        kind: ToolKind,
+    },
+    ToolStarted {
+        tool_call_id: String,
+    },
+    ToolFinished {
+        tool_call_id: String,
+        content: ReplyContent,
+        success: bool,
+    },
+}
+
 #[derive(Debug, Default)]
 pub struct Conversation {
     pub messages: Vec<Value>,
@@ -87,11 +131,16 @@ fn expand_skill_prompt(prompt: &str, skills_by_name: &BTreeMap<String, Skill>) -
     }
 }
 
-pub async fn turn<M: Model>(
+pub async fn turn<M, S>(
     client: &M,
     session: &mut Session,
     prompt: &str,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    _sink: &mut S,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
+where
+    M: Model,
+    S: AgentEventSink,
+{
     let tools = specs();
 
     let expanded_prompt = expand_skill_prompt(prompt, &session.skills_by_name);
@@ -166,7 +215,7 @@ pub async fn turn<M: Model>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use std::{collections::VecDeque, vec};
 
     use crate::{
         scripted_model::{
@@ -175,6 +224,22 @@ mod tests {
         },
         test_messages::assistant_reply,
     };
+
+    struct TestEventSink {
+        events: Vec<AgentEvent>,
+    }
+
+    impl TestEventSink {
+        fn new() -> Self {
+            Self { events: vec![] }
+        }
+    }
+
+    impl AgentEventSink for TestEventSink {
+        async fn emit(&mut self, event: AgentEvent) {
+            self.events.push(event);
+        }
+    }
 
     use super::*;
 
@@ -192,8 +257,9 @@ mod tests {
         }]));
 
         let mut session = empty_session();
+        let mut event_sink = TestEventSink::new();
 
-        let answer = turn(&model, &mut session, "Hello, world!")
+        let answer = turn(&model, &mut session, "Hello, world!", &mut event_sink)
             .await
             .expect("turn should succeed");
 
@@ -215,11 +281,13 @@ mod tests {
 
         let mut session = empty_session();
 
-        turn(&model, &mut session, "first question")
+        let mut event_sink = TestEventSink::new();
+
+        turn(&model, &mut session, "first question", &mut event_sink)
             .await
             .expect("first turn should succeed");
 
-        turn(&model, &mut session, "second question")
+        turn(&model, &mut session, "second question", &mut event_sink)
             .await
             .expect("second turn should succeed");
 
@@ -260,16 +328,28 @@ mod tests {
         let model = ScriptedModel::new(VecDeque::from(responses));
 
         let mut first_session = empty_session();
+        let mut first_event_sink = TestEventSink::new();
 
         let mut second_session = empty_session();
+        let mut second_event_sink = TestEventSink::new();
 
-        turn(&model, &mut first_session, "first question")
-            .await
-            .expect("first conversation should succeed");
+        turn(
+            &model,
+            &mut first_session,
+            "first question",
+            &mut first_event_sink,
+        )
+        .await
+        .expect("first conversation should succeed");
 
-        turn(&model, &mut second_session, "second question")
-            .await
-            .expect("second conversation should succeed");
+        turn(
+            &model,
+            &mut second_session,
+            "second question",
+            &mut second_event_sink,
+        )
+        .await
+        .expect("second conversation should succeed");
 
         let requests = model.requests.lock().unwrap();
 

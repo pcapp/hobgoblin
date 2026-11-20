@@ -25,8 +25,10 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 | [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
 | [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
 | [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [6b — Cleanup](06b-cleanup.md) | in progress | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
+| [6b — Cleanup](06b-cleanup.md) | paused | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
 | [7 — Cancellation](07-cancellation.md) | complete | Cancel a running prompt without reporting an error and leave the session reusable | All 68 Rust tests, premerge, build, and 8/8 external ACP cases pass on 2026-11-18. Coverage includes model cancellation, rollback/reuse, idle/unknown sessions, early sender registration, cancellation precedence over a ready model error, and direct-child tool termination. User-confirmed Zed cancellation/session-reuse smoke test also passed. Scope limitations are recorded below. |
+
+| [8 — Turn events](08-turn-events.md) | in progress | Report assistant replies and tool progress during a turn | Started 2026-11-20 at the learner's explicit direction; guide/source review is next. Task 6b's outstanding acceptance review is deferred, not a prerequisite. |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
 
@@ -1090,6 +1092,13 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 - Task 7 implementation, automated verification, and the user-confirmed Zed cancellation/session-reuse smoke test are complete.
 - Before starting Task 8, reconcile the outstanding Task 6b acceptance items; then review `08-turn-events.md` against the current source, raising decisions incrementally.
+
+## Session checkpoint — 2026-11-20 (Task 8 started)
+
+- The learner explicitly chose to move on to Task 8. Do not require Task 6b acceptance reconciliation before continuing.
+- Task 6b's outstanding acceptance items remain deferred and unverified, not marked complete.
+- Exact resume point: review the Task 8 turn-events draft against the current core and ACP prompt path, then discuss the first core-event design decision. Raise subsequent decisions only when needed.
+- No source changes or new validation runs at this checkpoint.
 
 ## Validation record
 

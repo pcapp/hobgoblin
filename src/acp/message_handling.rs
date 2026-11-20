@@ -16,7 +16,7 @@ use crate::{
         },
         session_registry::{SessionEntry, SessionId, get_session},
     },
-    agent::{self, Model},
+    agent::{self, Model, NoOpAgentEventSink},
     session::Session,
 };
 
@@ -202,7 +202,11 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
             None
         }
 
-        result = agent::turn(model.as_ref(), &mut session_guard, prompt) => {
+
+        result = async {
+            let mut event_sink = NoOpAgentEventSink {};
+            agent::turn(model.as_ref(), &mut session_guard, prompt, &mut event_sink).await
+        } => {
             Some(result)
         }
     };
