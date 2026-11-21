@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 use std::env;
+use std::error::Error;
+use std::fmt::Display;
 
+use crate::agent::EventSinkError::DeliveryFailed;
 use crate::session::Session;
 use crate::skills::Skill;
 use crate::tools::{execute_tool_call, specs};
@@ -11,9 +14,20 @@ use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub(crate) enum EventSinkError {
     DeliveryFailed,
 }
+
+impl Display for EventSinkError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeliveryFailed => write!(f, "Event delivery failed"),
+        }
+    }
+}
+
+impl Error for EventSinkError {}
 
 #[allow(dead_code)]
 pub(crate) trait AgentEventSink {
@@ -201,7 +215,7 @@ where
                         .emit(AgentEvent::AssistantText {
                             message: content.clone(),
                         })
-                        .await;
+                        .await?;
                     Ok(content.clone())
                 }
                 None => Err(std::io::Error::other("Model completed without assistant text").into()),

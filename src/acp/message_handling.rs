@@ -23,12 +23,44 @@ use crate::{
 #[allow(dead_code)]
 struct AcpEventSink {
     sender: mpsc::Sender<Value>,
+    session_id: SessionId,
 }
 
 impl AgentEventSink for AcpEventSink {
-    async fn emit(&mut self, _event: agent::AgentEvent) -> Result<(), EventSinkError> {
+    async fn emit(&mut self, event: agent::AgentEvent) -> Result<(), EventSinkError> {
+        use crate::agent::AgentEvent::AssistantText;
+
+        match event {
+            AssistantText { message } => {
+                let session_update =
+                    build_agent_message_chunk(&self.session_id.0.to_string(), &message);
+
+                self.sender
+                    .send(session_update)
+                    .await
+                    .map_err(|_| EventSinkError::DeliveryFailed)?;
+            }
+            _ => {}
+        }
         Ok(())
     }
+}
+
+pub fn build_agent_message_chunk(session_id: &str, update: &str) -> Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "sessionId":session_id,
+            "update": {
+                "content": {
+                    "type": "text",
+                    "text": update
+                },
+                "sessionUpdate": "agent_message_chunk",
+            }
+        }
+    })
 }
 
 fn build_success_response(request_id: Value, result: Value) -> Result<Value, RequestError> {
@@ -238,20 +270,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                 }
             };
 
-            let session_update = serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "session/update",
-                "params": {
-                    "sessionId": &session_id.0.to_string(),
-                    "update": {
-                        "content": {
-                            "type": "text",
-                            "text": answer
-                        },
-                        "sessionUpdate": "agent_message_chunk",
-                    }
-                }
-            });
+            let session_update = build_agent_message_chunk(&session_id.0.to_string(), &answer);
 
             sender.send(session_update).await.map_err(|error| {
                 let message = format!("Request {} failed: {error}", request_id);
