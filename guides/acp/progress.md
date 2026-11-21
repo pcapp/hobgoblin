@@ -1100,6 +1100,29 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - Exact resume point: review the Task 8 turn-events draft against the current core and ACP prompt path, then discuss the first core-event design decision. Raise subsequent decisions only when needed.
 - No source changes or new validation runs at this checkpoint.
 
+## Session checkpoint — 2026-11-20 (Task 8 assistant-text sink)
+
+### Current understanding
+
+- `emit(&mut self, ...)` gives a sink exclusive access to its state; shared references can still support internal mutation, as with channel senders.
+- `select!` branches take `pattern = future => handler`; an async block can own local state while awaiting a turn.
+- `EventSinkError::DeliveryFailed` identifies event delivery failure independently of ACP's `RequestError`. `Display` returns the result of `write!`; an empty `Error` implementation uses default methods. `?` propagates errors where a conversion exists.
+- Once the core emits assistant text through the ACP sink, the old post-turn notification must be removed to avoid duplicate text and shifted response ordering.
+
+### Source and validation checkpoint
+
+- Core event types, generic sink input to `turn`, no-op terminal sinks, and a collecting test sink are implemented. The text-event test checks final-answer emission.
+- ACP sink translates assistant text into notifications through the existing writer channel and maps send failure to `DeliveryFailed`. Other events are intentionally ignored for now.
+- `issue_prompt` constructs its sink locally; no sink dependency needs threading through the dispatch/handler signatures. The returned string remains for terminal compatibility.
+- After removing duplicate post-turn text delivery, `cargo test --locked` exited 0: all 68 tests passed. No report file generated. Full premerge and Zed smoke testing were not run for this increment.
+- No Rust source was edited by the assistant.
+
+### Exact resume point and unverified work
+
+- Next, inspect the text emission location in `turn`: the last inspected version emitted only inside the no-tool-call branch. Extend emission to text accompanying tool calls, with focused scripted-model coverage; preserve one final-answer event.
+- Tool lifecycle emission and ACP mapping remain unfinished. Delivery-failure coverage and Task 8 ordering/cancellation acceptance remain to be completed.
+- Task 6b acceptance remains deferred by explicit learner direction, not a prerequisite for Task 8.
+
 ## Validation record
 
 Add one structured entry after validation:
