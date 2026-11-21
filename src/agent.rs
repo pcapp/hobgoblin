@@ -16,6 +16,7 @@ pub(crate) trait AgentEventSink {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ToolKind {
     Read,
     Edit,
@@ -29,11 +30,13 @@ impl AgentEventSink for NoOpAgentEventSink {
 }
 
 #[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ReplyContent {
     TextContent { text: String },
 }
 
 #[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AgentEvent {
     AssistantText {
         message: String,
@@ -135,7 +138,7 @@ pub async fn turn<M, S>(
     client: &M,
     session: &mut Session,
     prompt: &str,
-    _sink: &mut S,
+    sink: &mut S,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 where
     M: Model,
@@ -186,7 +189,13 @@ where
 
         if tool_calls.is_empty() {
             return match &message.content {
-                Some(content) => Ok(content.clone()),
+                Some(content) => {
+                    sink.emit(AgentEvent::AssistantText {
+                        message: content.clone(),
+                    })
+                    .await;
+                    Ok(content.clone())
+                }
                 None => Err(std::io::Error::other("Model completed without assistant text").into()),
             };
         }
@@ -259,11 +268,15 @@ mod tests {
         let mut session = empty_session();
         let mut event_sink = TestEventSink::new();
 
-        let answer = turn(&model, &mut session, "Hello, world!", &mut event_sink)
+        let _ = turn(&model, &mut session, "Hello, world!", &mut event_sink)
             .await
             .expect("turn should succeed");
 
-        assert_eq!(answer, "scripted answer");
+        assert_eq!(event_sink.events.len(), 1);
+        match &event_sink.events[0] {
+            AgentEvent::AssistantText { message } => assert_eq!(message, "scripted answer"),
+            _ => panic!("Should have received an AssistantText"),
+        }
     }
 
     #[tokio::test]
