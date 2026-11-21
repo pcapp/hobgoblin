@@ -16,7 +16,7 @@ use crate::{
         },
         session_registry::{SessionEntry, SessionId, get_session},
     },
-    agent::{self, AgentEventSink, EventSinkError, Model, NoOpAgentEventSink},
+    agent::{self, AgentEventSink, EventSinkError, Model},
     session::Session,
 };
 
@@ -239,6 +239,11 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
     let mut session_guard = session_entry.session.lock().await;
     let history_length = session_guard.conversation.messages.len();
 
+    let mut event_sink = AcpEventSink {
+        sender: sender.clone(),
+        session_id,
+    };
+
     let turn_result = tokio::select! {
         biased;
         _ = stop_receiver => {
@@ -246,7 +251,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
         }
 
         result = async {
-            let mut event_sink = NoOpAgentEventSink {};
+
             agent::turn(model.as_ref(), &mut session_guard, prompt, &mut event_sink).await
         } => {
             Some(result)
@@ -261,7 +266,7 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
 
     match turn_result {
         Some(result) => {
-            let answer = match result {
+            let _ = match result {
                 Ok(answer) => answer,
                 Err(error) => {
                     let message = format!("Request {} failed: {error}", request_id);
@@ -269,13 +274,6 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
                     return Err(RequestError::InternalError { message });
                 }
             };
-
-            let session_update = build_agent_message_chunk(&session_id.0.to_string(), &answer);
-
-            sender.send(session_update).await.map_err(|error| {
-                let message = format!("Request {} failed: {error}", request_id);
-                RequestError::InternalError { message }
-            })?;
 
             let response = SuccessResponse {
                 jsonrpc: String::from("2.0"),
