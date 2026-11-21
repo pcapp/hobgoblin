@@ -228,8 +228,7 @@ mod tests {
             TurnResponse::{Done, TimeGated},
         },
         test_messages::{
-            assistant_reply, assistant_reply_with_tool_calls, make_agent_message_chunk,
-            make_initialize, make_tool_call,
+            assistant_reply, assistant_reply_with_tool_calls, make_initialize, make_tool_call,
         },
     };
 
@@ -385,12 +384,8 @@ mod tests {
 
         released.notify_one();
 
-        let result = client.read_frame().await;
-
-        assert_eq!(result["params"]["sessionId"], session_id);
-        let expected_response = make_agent_message_chunk(&session_id, "scripted answer");
-
-        assert_eq!(expected_response, result);
+        let response = client.read_frame().await;
+        check_agent_message_chunk(response, &session_id, "scripted answer");
 
         let response = client.read_frame().await;
         assert_eq!(response["id"], request_id);
@@ -443,10 +438,7 @@ mod tests {
         let first_question_request_id = client.prompt(&session_id, "first question").await;
 
         let response = client.read_frame().await;
-        assert_eq!(response["params"]["sessionId"], session_id);
-        let expected_response = make_agent_message_chunk(&session_id, "first");
-
-        assert_eq!(expected_response, response);
+        check_agent_message_chunk(response, &session_id, "first");
 
         let response = client.read_frame().await;
         assert_eq!(response["id"], first_question_request_id);
@@ -472,10 +464,8 @@ mod tests {
         let third_question_request_id = client.prompt(&session_id, "third question").await;
 
         let response = client.read_frame().await;
-        assert_eq!(response["params"]["sessionId"], session_id);
-        let expected_response = make_agent_message_chunk(&session_id, "third");
+        check_agent_message_chunk(response, &session_id, "third");
 
-        assert_eq!(expected_response, response);
         let response = read_frame(&mut client.client_reader).await;
 
         assert_eq!(response["id"], third_question_request_id);
@@ -537,10 +527,8 @@ mod tests {
         let prompt_request_id = client.prompt(&session_id, "What is 1+1?").await;
 
         let response = client.read_frame().await;
-        assert_eq!(response["params"]["sessionId"], session_id);
-        let expected_response = make_agent_message_chunk(&session_id, "scripted answer");
+        check_agent_message_chunk(response, &session_id, "scripted answer");
 
-        assert_eq!(expected_response, response);
         let response = read_frame(&mut client.client_reader).await;
 
         assert_eq!(response["id"], prompt_request_id);
@@ -631,6 +619,9 @@ mod tests {
 
         let prompt_request_id = client.prompt(&session_id, "first question").await;
 
+        let response = client.read_frame().await;
+        check_agent_message_chunk(response, &session_id, "first");
+
         let pid = wait_for_pid(pid_filename).await;
 
         client.cancel(&session_id).await;
@@ -648,6 +639,18 @@ mod tests {
             .await
             .expect("agent task should join")
             .expect("ACP transport should shutdown cleanly");
+    }
+
+    fn check_agent_message_chunk(response: Value, session_id: &str, message: &str) {
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["method"], "session/update");
+        assert_eq!(response["params"]["sessionId"], session_id);
+        assert_eq!(response["params"]["update"]["content"]["type"], "text");
+        assert_eq!(response["params"]["update"]["content"]["text"], message);
+        assert_eq!(
+            response["params"]["update"]["sessionUpdate"],
+            "agent_message_chunk"
+        );
     }
 
     #[tokio::test]

@@ -30,17 +30,14 @@ impl AgentEventSink for AcpEventSink {
     async fn emit(&mut self, event: agent::AgentEvent) -> Result<(), EventSinkError> {
         use crate::agent::AgentEvent::AssistantText;
 
-        match event {
-            AssistantText { message } => {
-                let session_update =
-                    build_agent_message_chunk(&self.session_id.0.to_string(), &message);
+        if let AssistantText { message } = event {
+            let session_update =
+                build_agent_message_chunk(&self.session_id.0.to_string(), &message);
 
-                self.sender
-                    .send(session_update)
-                    .await
-                    .map_err(|_| EventSinkError::DeliveryFailed)?;
-            }
-            _ => {}
+            self.sender
+                .send(session_update)
+                .await
+                .map_err(|_| EventSinkError::DeliveryFailed)?;
         }
         Ok(())
     }

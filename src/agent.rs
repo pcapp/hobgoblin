@@ -211,7 +211,7 @@ where
         if tool_calls.is_empty() {
             return match &message.content {
                 Some(content) => {
-                    let _ = sink
+                    let () = sink
                         .emit(AgentEvent::AssistantText {
                             message: content.clone(),
                         })
@@ -220,6 +220,12 @@ where
                 }
                 None => Err(std::io::Error::other("Model completed without assistant text").into()),
             };
+        } else if let Some(message) = &message.content {
+            let () = sink
+                .emit(AgentEvent::AssistantText {
+                    message: message.clone(),
+                })
+                .await?;
         }
 
         for tool_call in tool_calls {
@@ -253,7 +259,7 @@ mod tests {
             ScriptedModel,
             TurnResponse::{self, Done},
         },
-        test_messages::assistant_reply,
+        test_messages::{assistant_reply, assistant_reply_with_tool_calls, make_tool_call},
     };
 
     struct TestEventSink {
@@ -404,5 +410,39 @@ mod tests {
                 "content": "second question"
             }])
         );
+    }
+
+    fn check_assistant_text(event: &AgentEvent, expected: &str) {
+        match event {
+            AgentEvent::AssistantText { message } => assert_eq!(message, expected),
+            _ => panic!("Should have received an AssistantText"),
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_requests_with_text_show_agent_text() {
+        let tool_calls = vec![make_tool_call("tool_request", "test", "")];
+        let responses = [
+            Done {
+                response: assistant_reply_with_tool_calls("I'll try the test tool.", tool_calls),
+            },
+            Done {
+                response: assistant_reply("The answer is: banana"),
+            },
+        ];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
+
+        let mut session = empty_session();
+        let mut event_sink = TestEventSink::new();
+
+        turn(&model, &mut session, "first question", &mut event_sink)
+            .await
+            .expect("first conversation should succeed");
+
+        assert_eq!(event_sink.events.len(), 2);
+
+        check_assistant_text(&event_sink.events[0], "I'll try the test tool.");
+        check_assistant_text(&event_sink.events[1], "The answer is: banana");
     }
 }
