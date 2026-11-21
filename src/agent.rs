@@ -11,8 +11,13 @@ use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
 #[allow(dead_code)]
+pub(crate) enum EventSinkError {
+    DeliveryFailed,
+}
+
+#[allow(dead_code)]
 pub(crate) trait AgentEventSink {
-    async fn emit(&mut self, event: AgentEvent);
+    async fn emit(&mut self, event: AgentEvent) -> Result<(), EventSinkError>;
 }
 
 #[allow(dead_code)]
@@ -26,7 +31,9 @@ pub enum ToolKind {
 pub(crate) struct NoOpAgentEventSink {}
 
 impl AgentEventSink for NoOpAgentEventSink {
-    async fn emit(&mut self, _event: AgentEvent) {}
+    async fn emit(&mut self, _event: AgentEvent) -> Result<(), EventSinkError> {
+        Ok(())
+    }
 }
 
 #[allow(dead_code)]
@@ -190,10 +197,11 @@ where
         if tool_calls.is_empty() {
             return match &message.content {
                 Some(content) => {
-                    sink.emit(AgentEvent::AssistantText {
-                        message: content.clone(),
-                    })
-                    .await;
+                    let _ = sink
+                        .emit(AgentEvent::AssistantText {
+                            message: content.clone(),
+                        })
+                        .await;
                     Ok(content.clone())
                 }
                 None => Err(std::io::Error::other("Model completed without assistant text").into()),
@@ -245,8 +253,9 @@ mod tests {
     }
 
     impl AgentEventSink for TestEventSink {
-        async fn emit(&mut self, event: AgentEvent) {
+        async fn emit(&mut self, event: AgentEvent) -> Result<(), EventSinkError> {
             self.events.push(event);
+            Ok(())
         }
     }
 

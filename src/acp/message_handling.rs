@@ -16,9 +16,20 @@ use crate::{
         },
         session_registry::{SessionEntry, SessionId, get_session},
     },
-    agent::{self, Model, NoOpAgentEventSink},
+    agent::{self, AgentEventSink, EventSinkError, Model, NoOpAgentEventSink},
     session::Session,
 };
+
+#[allow(dead_code)]
+struct AcpEventSink {
+    sender: mpsc::Sender<Value>,
+}
+
+impl AgentEventSink for AcpEventSink {
+    async fn emit(&mut self, _event: agent::AgentEvent) -> Result<(), EventSinkError> {
+        Ok(())
+    }
+}
 
 fn build_success_response(request_id: Value, result: Value) -> Result<Value, RequestError> {
     let response = SuccessResponse {
@@ -201,7 +212,6 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
         _ = stop_receiver => {
             None
         }
-
 
         result = async {
             let mut event_sink = NoOpAgentEventSink {};
