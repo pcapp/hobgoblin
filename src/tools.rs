@@ -3,9 +3,61 @@ use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-const READ: &str = "Read";
-const WRITE: &str = "Write";
-const BASH: &str = "Bash";
+pub const READ: &str = "Read";
+pub const WRITE: &str = "Write";
+pub const BASH: &str = "Bash";
+
+#[allow(dead_code)]
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ToolKind {
+    Read,
+    Edit,
+    Execute,
+}
+
+pub(crate) struct Tool {
+    name: String,
+    #[allow(unused)]
+    kind: ToolKind,
+    description: String,
+    params: Value,
+}
+
+impl Tool {
+    pub fn spec(&self) -> Value {
+        json!({"type": "function",
+        "function": {
+          "name": self.name,
+          "description": self.description,
+          "parameters": self.params
+        }})
+    }
+}
+
+pub fn get_tools() -> Vec<Tool> {
+    let read_tool = Tool {
+        name: READ.to_string(),
+        kind: ToolKind::Read,
+        description: "Read and return the contents of a file".to_string(),
+        params: serde_json::to_value(schema_for!(ReadArgs)).expect("to serialize"),
+    };
+
+    let write_tool = Tool {
+        name: WRITE.to_string(),
+        kind: ToolKind::Edit,
+        description: "Write content to a file".to_string(),
+        params: serde_json::to_value(schema_for!(WriteArgs)).expect("to serialize"),
+    };
+
+    let bash_tool = Tool {
+        name: BASH.to_string(),
+        kind: ToolKind::Execute,
+        description: "Execute a shell command".to_string(),
+        params: serde_json::to_value(schema_for!(BashArgs)).expect("to serialize"),
+    };
+
+    vec![read_tool, write_tool, bash_tool]
+}
 
 #[derive(Deserialize, JsonSchema)]
 struct ReadArgs {
@@ -22,41 +74,6 @@ struct WriteArgs {
 struct BashArgs {
     #[schemars(description = "The command to execute")]
     command: String,
-}
-
-fn read_spec() -> Value {
-    json!({"type": "function",
-    "function": {
-      "name": READ,
-      "description": "Read and return the contents of a file",
-      "parameters": schema_for!(ReadArgs)
-    }})
-}
-
-fn write_spec() -> Value {
-    json!({
-      "type": "function",
-      "function": {
-        "name": WRITE,
-        "description": "Write content to a file",
-        "parameters": schema_for!(WriteArgs)
-      }
-    })
-}
-
-fn bash_spec() -> Value {
-    json!({
-      "type": "function",
-      "function": {
-        "name": BASH,
-        "description": "Execute a shell command",
-        "parameters": schema_for!(BashArgs)
-      }
-    })
-}
-
-pub fn specs() -> Value {
-    json!([read_spec(), write_spec(), bash_spec()])
 }
 
 fn read_file_tool(arguments: &str) -> Value {
@@ -150,5 +167,32 @@ pub async fn execute_tool_call(call: &ToolCall) -> Value {
           "ok": false,
           "error": format!("Unimplemented tool: {}", unimplemented_tool)
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use schemars::schema_for;
+    use serde_json::json;
+
+    use crate::tools::{READ, ReadArgs, Tool};
+
+    #[test]
+    fn tool_generates_spec() {
+        let read_tool = Tool {
+            name: READ.to_string(),
+            kind: crate::tools::ToolKind::Read,
+            description: "Read and return the contents of a file".to_string(),
+            params: serde_json::to_value(schema_for!(ReadArgs)).expect("to serialize"),
+        };
+
+        let expected = json!({"type": "function",
+        "function": {
+          "name": READ,
+          "description": "Read and return the contents of a file",
+          "parameters": schema_for!(ReadArgs)
+        }});
+
+        assert_eq!(read_tool.spec(), expected);
     }
 }
