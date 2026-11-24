@@ -57,4 +57,12 @@ impl Tool for ReadTool {
             }
         })
     }
+
+    fn build_title(&self, args_by_name: &BTreeMap<String, String>) -> String {
+        if let Some(file_path) = args_by_name.get("file_path") {
+            format!("Read {file_path}")
+        } else {
+            "Read".to_string()
+        }
+    }
 }

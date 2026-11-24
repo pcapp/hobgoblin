@@ -168,7 +168,7 @@ where
 {
     let tools = get_tools()?;
     let tool_specs =
-        serde_json::to_value(tools.iter().map(|(_, v)| v.spec()).collect::<Vec<Value>>())?;
+        serde_json::to_value(tools.values().map(|v| v.spec()).collect::<Vec<Value>>())?;
 
     let expanded_prompt = expand_skill_prompt(prompt, &session.skills_by_name);
     session.conversation.messages.push(json!({
@@ -235,9 +235,10 @@ where
             // Temporary unrwap
             let tool = tools.get(&tool_call.function.name).unwrap();
 
+            let args_by_name = parse_arguments(&tool_call.function.arguments)?;
             let tool_request = ToolRequested {
                 tool_call_id: tool_call.id.clone(),
-                title: "temp".to_string(),
+                title: tool.build_title(&args_by_name),
                 name: tool.name().to_string(),
                 kind: tool.kind(),
                 arguments: parse_arguments(&tool_call.function.arguments)?,
@@ -278,7 +279,7 @@ mod tests {
     use std::{collections::VecDeque, vec};
 
     use crate::{
-        agent::{AgentEvent::*, ReplyContent::TextContent},
+        agent::AgentEvent::*,
         scripted_model::{
             ScriptedModel,
             TurnResponse::{self, Done},
@@ -480,7 +481,7 @@ mod tests {
     async fn tool_emits_lifecycle_events_for_successful_usage() {
         let expected_tool_id = "tool_request";
         let expected_tool_name = "Read";
-        let expected_tool_title = "Read src/main.rs";
+
         let tool_calls = vec![make_tool_call(
             expected_tool_id,
             expected_tool_name,
@@ -511,7 +512,7 @@ mod tests {
         match &event_sink.events[1] {
             ToolRequested {
                 tool_call_id,
-                title,
+                title: _,
                 name,
                 kind,
                 arguments,
@@ -534,9 +535,9 @@ mod tests {
             } => {
                 assert_eq!(tool_call_id, expected_tool_id);
                 assert!(matches!(status, ToolCallStatus::Completed));
-                let expected_content = TextContent {
-                    text: String::from("Test tool result"),
-                };
+                // let expected_content = TextContent {
+                //     text: String::from("Test tool result"),
+                // };
                 assert_eq!(content.len(), 1);
                 // assert_eq!(expected_content, content[0]);
             }

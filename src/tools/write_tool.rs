@@ -59,4 +59,12 @@ impl Tool for WriteTool {
             }
         })
     }
+
+    fn build_title(&self, args_by_name: &BTreeMap<String, String>) -> String {
+        if let Some(file_path) = args_by_name.get("file_path") {
+            format!("Write to {file_path}")
+        } else {
+            "Write".to_string()
+        }
+    }
 }

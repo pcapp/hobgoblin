@@ -39,6 +39,7 @@ pub(crate) trait Tool: Send {
     fn name(&self) -> &str;
     fn kind(&self) -> ToolKind;
     fn description(&self) -> &str;
+    fn build_title(&self, args_by_name: &BTreeMap<String, String>) -> String;
     fn params(&self) -> Value;
     fn execute(&self, args_by_name: BTreeMap<String, String>) -> ExecuteRetVal<'_>;
 
@@ -87,9 +88,7 @@ pub async fn execute_tool_call(call: &ToolCall) -> Value {
 
     if let Some(tool) = tools.get(tool_name) {
         let args_by_name = parse_arguments(&call.function.arguments).unwrap();
-        println!("arguments: {:?}", call.function.arguments);
-        let response = tool.execute(args_by_name).await.unwrap();
-        response
+        tool.execute(args_by_name).await.unwrap()
     } else {
         json!({
               "ok": false,

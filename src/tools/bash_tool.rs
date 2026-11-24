@@ -70,4 +70,8 @@ impl Tool for BashTool {
             }
         })
     }
+
+    fn build_title(&self, _args_by_name: &BTreeMap<String, String>) -> String {
+        "Run a bash command".to_string()
+    }
 }
