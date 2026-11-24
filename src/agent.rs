@@ -278,6 +278,8 @@ where
 mod tests {
     use std::{collections::VecDeque, vec};
 
+    use tokio::fs;
+
     use crate::{
         agent::AgentEvent::*,
         scripted_model::{
@@ -479,11 +481,11 @@ mod tests {
 
     #[tokio::test]
     async fn tool_emits_lifecycle_events_for_successful_usage() {
-        let expected_tool_id = "tool_request";
+        let expected_tool_call_id = "tool_request";
         let expected_tool_name = "Read";
 
         let tool_calls = vec![make_tool_call(
-            expected_tool_id,
+            expected_tool_call_id,
             expected_tool_name,
             r#"{"file_path": "src/main.rs"}}"#,
         )];
@@ -509,41 +511,85 @@ mod tests {
 
         check_assistant_text(&event_sink.events[0], "I'll try the read tool.");
 
-        match &event_sink.events[1] {
+        check_tool_requested(
+            &event_sink.events[1],
+            expected_tool_call_id,
+            expected_tool_name,
+            "Read src/main.rs",
+            &ToolKind::Read,
+        );
+
+        let file_content = read_file_into_text_context("src/main.rs").await;
+        let expected_content = vec![file_content];
+
+        check_tool_completed(
+            &event_sink.events[2],
+            expected_tool_call_id,
+            &expected_content,
+        );
+
+        check_assistant_text(&event_sink.events[3], "The answer is: banana");
+    }
+
+    fn check_tool_requested(
+        event: &AgentEvent,
+        expected_tool_call_id: &str,
+        expected_tool_name: &str,
+        expected_title: &str,
+        expected_tool_kind: &ToolKind,
+    ) {
+        match event {
             ToolRequested {
                 tool_call_id,
-                title: _,
+                title,
                 name,
                 kind,
                 arguments,
             } => {
-                assert_eq!(tool_call_id, expected_tool_id);
-                // TODO Compute the title.
-                // assert_eq!(title, expected_tool_title);
+                assert_eq!(tool_call_id, expected_tool_call_id);
+                assert_eq!(title, expected_title);
                 assert_eq!(name, expected_tool_name);
-                assert!(matches!(kind, ToolKind::Read));
+                assert_eq!(kind, expected_tool_kind);
                 assert_eq!(arguments.len(), 1);
             }
             _ => panic!("Expected a ToolRequested event."),
         }
+    }
 
-        match &event_sink.events[2] {
+    async fn read_file_into_text_context(file_path: &str) -> ReplyContent {
+        let file = fs::read_to_string(file_path)
+            .await
+            .expect("src/main.rs should exist");
+        let json = serde_json::json!({
+            "ok": true,
+            "content": file
+        });
+
+        TextContent {
+            text: json.to_string(),
+        }
+    }
+
+    fn check_tool_completed(
+        event: &AgentEvent,
+        expected_tool_call_id: &str,
+        expected_content: &Vec<ReplyContent>,
+    ) {
+        match event {
             ToolUpdate {
                 tool_call_id,
                 status,
                 content,
             } => {
-                assert_eq!(tool_call_id, expected_tool_id);
+                assert_eq!(tool_call_id, expected_tool_call_id);
                 assert!(matches!(status, ToolCallStatus::Completed));
-                // let expected_content = TextContent {
-                //     text: String::from("Test tool result"),
-                // };
-                assert_eq!(content.len(), 1);
-                // assert_eq!(expected_content, content[0]);
+
+                assert_eq!(content.len(), expected_content.len());
+                for (i, expected) in expected_content.iter().enumerate() {
+                    assert_eq!(&content[i], expected);
+                }
             }
             _ => panic!("Expected a ToolUpdated event."),
         }
-
-        check_assistant_text(&event_sink.events[3], "The answer is: banana");
     }
 }
