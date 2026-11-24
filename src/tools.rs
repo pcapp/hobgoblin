@@ -1,14 +1,15 @@
+use std::collections::HashMap;
+
 use crate::wire::ToolCall;
 use schemars::{JsonSchema, schema_for};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub const READ: &str = "Read";
-pub const WRITE: &str = "Write";
-pub const BASH: &str = "Bash";
+const READ: &str = "Read";
+const WRITE: &str = "Write";
+const BASH: &str = "Bash";
 
-#[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub(crate) enum ToolKind {
     Read,
     Edit,
@@ -16,11 +17,10 @@ pub(crate) enum ToolKind {
 }
 
 pub(crate) struct Tool {
-    name: String,
-    #[allow(unused)]
-    kind: ToolKind,
-    description: String,
-    params: Value,
+    pub name: String,
+    pub kind: ToolKind,
+    pub description: String,
+    pub params: Value,
 }
 
 impl Tool {
@@ -34,29 +34,33 @@ impl Tool {
     }
 }
 
-pub fn get_tools() -> Vec<Tool> {
+pub fn get_tools() -> Result<HashMap<String, Tool>, serde_json::Error> {
     let read_tool = Tool {
         name: READ.to_string(),
         kind: ToolKind::Read,
         description: "Read and return the contents of a file".to_string(),
-        params: serde_json::to_value(schema_for!(ReadArgs)).expect("to serialize"),
+        params: serde_json::to_value(schema_for!(ReadArgs))?,
     };
 
     let write_tool = Tool {
         name: WRITE.to_string(),
         kind: ToolKind::Edit,
         description: "Write content to a file".to_string(),
-        params: serde_json::to_value(schema_for!(WriteArgs)).expect("to serialize"),
+        params: serde_json::to_value(schema_for!(WriteArgs))?,
     };
 
     let bash_tool = Tool {
         name: BASH.to_string(),
         kind: ToolKind::Execute,
         description: "Execute a shell command".to_string(),
-        params: serde_json::to_value(schema_for!(BashArgs)).expect("to serialize"),
+        params: serde_json::to_value(schema_for!(BashArgs))?,
     };
 
-    vec![read_tool, write_tool, bash_tool]
+    Ok(HashMap::from([
+        (READ.to_string(), read_tool),
+        (WRITE.to_string(), write_tool),
+        (BASH.to_string(), bash_tool),
+    ]))
 }
 
 #[derive(Deserialize, JsonSchema)]

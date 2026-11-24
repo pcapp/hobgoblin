@@ -1,15 +1,19 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::error::Error;
 use std::fmt::Display;
+use std::sync::LazyLock;
 
+use crate::agent::AgentEvent::{ToolRequested, ToolUpdate};
 use crate::agent::EventSinkError::DeliveryFailed;
+use crate::agent::ReplyContent::TextContent;
 use crate::session::Session;
 use crate::skills::Skill;
-use crate::tools::{ToolKind, execute_tool_call, get_tools};
+use crate::tools::{Tool, ToolKind, execute_tool_call, get_tools};
 use crate::wire::ChatResponse;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
+use regex::Regex;
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
@@ -68,7 +72,7 @@ pub enum AgentEvent {
         title: String,
         name: String,
         kind: ToolKind,
-        arguments: Vec<String>,
+        arguments: BTreeMap<String, String>,
     },
     ToolUpdate {
         tool_call_id: String,
@@ -164,8 +168,9 @@ where
     M: Model,
     S: AgentEventSink,
 {
-    let tools: Vec<Value> = get_tools().iter().map(|t| t.spec()).collect();
-    let tools = serde_json::to_value(tools)?;
+    let tools: HashMap<String, Tool> = get_tools()?;
+    let tool_specs =
+        serde_json::to_value(tools.iter().map(|(_, v)| v.spec()).collect::<Vec<Value>>())?;
 
     let expanded_prompt = expand_skill_prompt(prompt, &session.skills_by_name);
     session.conversation.messages.push(json!({
@@ -179,7 +184,7 @@ where
         let request = json!({
             "messages": session.conversation.messages,
             "model": "anthropic/claude-haiku-4.5",
-            "tools": tools,
+            "tools": tool_specs,
         });
 
         tracing::debug!(
@@ -229,18 +234,30 @@ where
         }
 
         for tool_call in tool_calls {
-            // let tool_request = ToolRequested {
-            //     tool_call_id: tool_call.id.clone(),
-            //     title: todo!(),
-            //     name: todo!(),
-            //     kind: todo!(),
-            //     arguments: todo!(),
-            // };
-            // let () = sink.emit(tool_request).await?;
+            // Temporary unrwap
+            let tool = tools.get(&tool_call.function.name).unwrap();
+
+            let tool_request = ToolRequested {
+                tool_call_id: tool_call.id.clone(),
+                title: "temp".to_string(),
+                name: tool.name.clone(),
+                kind: tool.kind,
+                arguments: parse_arguments(&tool_call.function.arguments)?,
+            };
+            let () = sink.emit(tool_request).await?;
             let result = execute_tool_call(tool_call).await;
 
             if let Some(error) = result["error"].as_str() {
                 eprintln!("Tool call error: {}", error);
+            } else {
+                let tool_request = ToolUpdate {
+                    tool_call_id: tool_call.id.clone(),
+                    status: ToolCallStatus::Completed,
+                    content: vec![TextContent {
+                        text: result.to_string(),
+                    }],
+                };
+                let () = sink.emit(tool_request).await?;
             }
 
             session.conversation.messages.push(json!({
@@ -258,12 +275,25 @@ where
     .into())
 }
 
+static KEY_VALUE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""(?<key>\w+)"\s*:\s*"(?<value>[\S]+)""#).unwrap());
+
+fn parse_arguments(args: &str) -> Result<BTreeMap<String, String>, regex::Error> {
+    let mut arg_by_name = BTreeMap::new();
+
+    for group in KEY_VALUE_RE.captures_iter(args) {
+        arg_by_name.insert(group["key"].to_string(), group["value"].to_string());
+    }
+
+    Ok(arg_by_name)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::VecDeque, vec};
 
     use crate::{
-        agent::AgentEvent::*,
+        agent::{AgentEvent::*, ReplyContent::TextContent},
         scripted_model::{
             ScriptedModel,
             TurnResponse::{self, Done},
@@ -293,6 +323,18 @@ mod tests {
     fn empty_session() -> Session {
         let cwd = std::env::current_dir().expect("test should have a current directory");
         Session::empty(cwd)
+    }
+
+    #[test]
+    fn should_parse_tool_call_args() {
+        let args = "{\"file_path\": \"src/tools.rs\", \"content\": \"content\"}";
+        let arg_by_name = parse_arguments(args).expect("to parse successfully");
+
+        let expected = BTreeMap::from([
+            ("file_path".to_string(), "src/tools.rs".to_string()),
+            ("content".to_string(), "content".to_string()),
+        ]);
+        assert_eq!(expected, arg_by_name)
     }
 
     #[tokio::test]
@@ -455,68 +497,68 @@ mod tests {
         check_assistant_text(&event_sink.events[1], "The answer is: banana");
     }
 
-    //     #[tokio::test]
-    //     async fn tool_emits_lifecycle_events_for_successful_usage() {
-    //         let expected_tool_id = "tool_request";
-    //         let expected_tool_name = "Read";
-    //         let expected_tool_title = "test";
-    //         let tool_calls = vec![make_tool_call(expected_tool_id, expected_tool_name, "")];
-    //         let responses = [
-    //             Done {
-    //                 response: assistant_reply_with_tool_calls("I'll try the read tool.", tool_calls),
-    //             },
-    //             Done {
-    //                 response: assistant_reply("The answer is: banana"),
-    //             },
-    //         ];
-    //
-    //         let model = ScriptedModel::new(VecDeque::from(responses));
-    //
-    //         let mut session = empty_session();
-    //         let mut event_sink = TestEventSink::new();
-    //
-    //         turn(&model, &mut session, "first question", &mut event_sink)
-    //             .await
-    //             .expect("first conversation should succeed");
-    //
-    //         assert_eq!(event_sink.events.len(), 2);
-    //
-    //         check_assistant_text(&event_sink.events[0], "I'll try the read tool.");
-    //
-    //         match &event_sink.events[1] {
-    //             ToolRequested {
-    //                 tool_call_id,
-    //                 title,
-    //                 name,
-    //                 kind,
-    //                 arguments,
-    //             } => {
-    //                 assert_eq!(tool_call_id, expected_tool_id);
-    //                 assert_eq!(title, expected_tool_title);
-    //                 assert_eq!(name, expected_tool_name);
-    //                 assert!(matches!(kind, ToolKind::Read));
-    //                 assert_eq!(arguments.len(), 0);
-    //             }
-    //             _ => panic!("Expected a ToolRequested event."),
-    //         }
-    //
-    //         match &event_sink.events[2] {
-    //             ToolUpdate {
-    //                 tool_call_id,
-    //                 status,
-    //                 content,
-    //             } => {
-    //                 assert_eq!(tool_call_id, expected_tool_id);
-    //                 assert!(matches!(status, ToolCallStatus::Completed));
-    //                 let expected_content = TextContent {
-    //                     text: String::from("Test tool result"),
-    //                 };
-    //                 assert_eq!(content.len(), 1);
-    //                 assert_eq!(expected_content, content[0]);
-    //             }
-    //             _ => panic!("Expected a ToolUpdated event."),
-    //         }
-    //
-    //         check_assistant_text(&event_sink.events[0], "The answer is: banana");
-    //     }
+    #[tokio::test]
+    async fn tool_emits_lifecycle_events_for_successful_usage() {
+        let expected_tool_id = "tool_request";
+        let expected_tool_name = "Read";
+        let expected_tool_title = "test";
+        let tool_calls = vec![make_tool_call(expected_tool_id, expected_tool_name, "")];
+        let responses = [
+            Done {
+                response: assistant_reply_with_tool_calls("I'll try the read tool.", tool_calls),
+            },
+            Done {
+                response: assistant_reply("The answer is: banana"),
+            },
+        ];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
+
+        let mut session = empty_session();
+        let mut event_sink = TestEventSink::new();
+
+        turn(&model, &mut session, "first question", &mut event_sink)
+            .await
+            .expect("first conversation should succeed");
+
+        assert_eq!(event_sink.events.len(), 3);
+
+        check_assistant_text(&event_sink.events[0], "I'll try the read tool.");
+
+        match &event_sink.events[1] {
+            ToolRequested {
+                tool_call_id,
+                title,
+                name,
+                kind,
+                arguments,
+            } => {
+                assert_eq!(tool_call_id, expected_tool_id);
+                assert_eq!(title, expected_tool_title);
+                assert_eq!(name, expected_tool_name);
+                assert!(matches!(kind, ToolKind::Read));
+                assert_eq!(arguments.len(), 0);
+            }
+            _ => panic!("Expected a ToolRequested event."),
+        }
+
+        match &event_sink.events[2] {
+            ToolUpdate {
+                tool_call_id,
+                status,
+                content,
+            } => {
+                assert_eq!(tool_call_id, expected_tool_id);
+                assert!(matches!(status, ToolCallStatus::Completed));
+                let expected_content = TextContent {
+                    text: String::from("Test tool result"),
+                };
+                assert_eq!(content.len(), 1);
+                assert_eq!(expected_content, content[0]);
+            }
+            _ => panic!("Expected a ToolUpdated event."),
+        }
+
+        check_assistant_text(&event_sink.events[0], "The answer is: banana");
+    }
 }
