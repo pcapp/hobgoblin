@@ -1,8 +1,24 @@
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeMap, HashMap},
+    io,
+    pin::Pin,
+    sync::LazyLock,
+};
 
-use crate::wire::ToolCall;
-use schemars::{JsonSchema, schema_for};
-use serde::Deserialize;
+mod bash_tool;
+mod read_tool;
+mod write_tool;
+
+use crate::{
+    tools::{
+        bash_tool::{BashArgs, BashTool},
+        read_tool::{ReadArgs, ReadTool},
+        write_tool::{WriteArgs, WriteTool},
+    },
+    wire::ToolCall,
+};
+use regex::Regex;
+use schemars::schema_for;
 use serde_json::{Value, json};
 
 const READ: &str = "Read";
@@ -16,174 +32,109 @@ pub(crate) enum ToolKind {
     Execute,
 }
 
-pub(crate) struct Tool {
-    pub name: String,
-    pub kind: ToolKind,
-    pub description: String,
-    pub params: Value,
-}
+pub(crate) type ExecuteRetVal<'a> =
+    Pin<Box<dyn Future<Output = Result<Value, io::Error>> + Send + 'a>>;
 
-impl Tool {
-    pub fn spec(&self) -> Value {
+pub(crate) trait Tool: Send {
+    fn name(&self) -> &str;
+    fn kind(&self) -> ToolKind;
+    fn description(&self) -> &str;
+    fn params(&self) -> Value;
+    fn execute(&self, args_by_name: BTreeMap<String, String>) -> ExecuteRetVal<'_>;
+
+    fn spec(&self) -> Value {
         json!({"type": "function",
         "function": {
-          "name": self.name,
-          "description": self.description,
-          "parameters": self.params
+          "name": self.name(),
+          "description": self.description(),
+          "parameters": self.params()
         }})
     }
 }
 
-pub fn get_tools() -> Result<HashMap<String, Tool>, serde_json::Error> {
-    let read_tool = Tool {
+pub fn get_tools() -> Result<HashMap<String, Box<dyn Tool>>, serde_json::Error> {
+    let read_tool: Box<dyn Tool> = Box::new(ReadTool {
         name: READ.to_string(),
         kind: ToolKind::Read,
         description: "Read and return the contents of a file".to_string(),
         params: serde_json::to_value(schema_for!(ReadArgs))?,
-    };
+    });
 
-    let write_tool = Tool {
+    let write_tool: Box<dyn Tool> = Box::new(WriteTool {
         name: WRITE.to_string(),
         kind: ToolKind::Edit,
         description: "Write content to a file".to_string(),
         params: serde_json::to_value(schema_for!(WriteArgs))?,
-    };
+    });
 
-    let bash_tool = Tool {
+    let bash_tool: Box<dyn Tool> = Box::new(BashTool {
         name: BASH.to_string(),
         kind: ToolKind::Execute,
         description: "Execute a shell command".to_string(),
         params: serde_json::to_value(schema_for!(BashArgs))?,
-    };
+    });
 
-    Ok(HashMap::from([
+    Ok(HashMap::<String, Box<dyn Tool>>::from([
         (READ.to_string(), read_tool),
         (WRITE.to_string(), write_tool),
         (BASH.to_string(), bash_tool),
     ]))
 }
 
-#[derive(Deserialize, JsonSchema)]
-struct ReadArgs {
-    file_path: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-struct WriteArgs {
-    file_path: String,
-    content: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-struct BashArgs {
-    #[schemars(description = "The command to execute")]
-    command: String,
-}
-
-fn read_file_tool(arguments: &str) -> Value {
-    let args: ReadArgs = match serde_json::from_str(arguments) {
-        Ok(args) => args,
-        Err(err) => {
-            return json!({
-                "ok": false,
-                "error": format!("Invalid Read arguments: {}", err)
-            });
-        }
-    };
-
-    match std::fs::read_to_string(args.file_path) {
-        Ok(contents) => json!({
-          "ok": true,
-          "content": contents
-        }),
-        Err(err) => json!({
-          "ok": false,
-          "error": err.to_string()
-        }),
-    }
-}
-
-fn write_file_tool(arguments: &str) -> Value {
-    let args: WriteArgs = match serde_json::from_str(arguments) {
-        Ok(args) => args,
-        Err(err) => {
-            return json!({
-                "ok": false,
-                "error": format!("Invalid Write arguments: {}", err)
-            });
-        }
-    };
-
-    match std::fs::write(args.file_path, args.content) {
-        Ok(contents) => json!({
-          "ok": true,
-          "content": contents
-        }),
-        Err(err) => json!({
-          "ok": false,
-          "error": err.to_string()
-        }),
-    }
-}
-
-async fn run_bash_tool(arguments: &str) -> Value {
-    let args: BashArgs = match serde_json::from_str(arguments) {
-        Ok(args) => args,
-        Err(err) => {
-            return json!({
-                "ok": false,
-                "error": format!("Invalid Write arguments: {}", err)
-            });
-        }
-    };
-
-    tracing::debug!(command = %args.command, "Deserialized Bash arguments");
-    let output = match tokio::process::Command::new("bash")
-        .arg("-c")
-        .arg(&args.command)
-        .kill_on_drop(true)
-        .output()
-        .await
-    {
-        Ok(output) => output,
-        Err(err) => {
-            return json!({
-                "ok": false,
-                "error": format!("Could run the command successfully. {}", err)
-            });
-        }
-    };
-
-    json!({
-        "ok": true,
-        "stdout": &output.stdout,
-        "stderr": &output.stderr
-    })
-}
-
 pub async fn execute_tool_call(call: &ToolCall) -> Value {
-    match call.function.name.as_str() {
-        READ => read_file_tool(&call.function.arguments),
-        WRITE => write_file_tool(&call.function.arguments),
-        BASH => run_bash_tool(&call.function.arguments).await,
+    let tools = get_tools().unwrap();
+    let tool_name = call.function.name.as_str();
 
-        unimplemented_tool => json!({
-          "ok": false,
-          "error": format!("Unimplemented tool: {}", unimplemented_tool)
-        }),
+    if let Some(tool) = tools.get(tool_name) {
+        let args_by_name = parse_arguments(&call.function.arguments).unwrap();
+        println!("arguments: {:?}", call.function.arguments);
+        let response = tool.execute(args_by_name).await.unwrap();
+        response
+    } else {
+        json!({
+              "ok": false,
+              "error": format!("Unimplemented tool: {}", tool_name)
+        })
     }
+}
+
+static KEY_VALUE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""(?<key>\w+)"\s*:\s*"(?<value>[^"]*)""#).unwrap());
+
+pub fn parse_arguments(args: &str) -> Result<BTreeMap<String, String>, regex::Error> {
+    let mut arg_by_name = BTreeMap::new();
+
+    for group in KEY_VALUE_RE.captures_iter(args) {
+        arg_by_name.insert(group["key"].to_string(), group["value"].to_string());
+    }
+
+    Ok(arg_by_name)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use schemars::schema_for;
     use serde_json::json;
 
-    use crate::tools::{READ, ReadArgs, Tool};
+    use crate::tools::{READ, ReadTool, Tool, parse_arguments, read_tool::ReadArgs};
+
+    #[test]
+    fn should_parse_tool_call_args() {
+        let args = "{\"file_path\": \"src/tools.rs\", \"content\": \"content\"}";
+        let arg_by_name = parse_arguments(args).expect("to parse successfully");
+
+        let expected = BTreeMap::from([
+            ("file_path".to_string(), "src/tools.rs".to_string()),
+            ("content".to_string(), "content".to_string()),
+        ]);
+        assert_eq!(expected, arg_by_name)
+    }
 
     #[test]
     fn tool_generates_spec() {
-        let read_tool = Tool {
+        let read_tool = ReadTool {
             name: READ.to_string(),
             kind: crate::tools::ToolKind::Read,
             description: "Read and return the contents of a file".to_string(),
