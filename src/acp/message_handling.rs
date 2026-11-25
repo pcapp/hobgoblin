@@ -6,6 +6,7 @@ use tokio::sync::{
     oneshot::{self, Receiver},
 };
 
+use crate::tools::get_tools;
 use crate::{
     acp::{
         ConnectionState, Request,
@@ -248,8 +249,8 @@ pub async fn issue_prompt<M: Model + Send + Sync + 'static>(
         }
 
         result = async {
-
-            agent::turn(model.as_ref(), &mut session_guard, prompt, &mut event_sink).await
+            let tools = get_tools().expect("To retrieve tools");
+            agent::turn(model.as_ref(), &mut session_guard, prompt, &mut event_sink, &tools).await
         } => {
             Some(result)
         }

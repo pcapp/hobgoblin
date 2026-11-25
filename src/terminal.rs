@@ -1,5 +1,6 @@
 use std::io::{BufRead, Write};
 
+use crate::tools::get_tools;
 use crate::{
     agent::{self, NoOpAgentEventSink},
     session::Session,
@@ -16,7 +17,8 @@ pub async fn run_once<M: agent::Model, W: Write, L: SkillLoader>(
     let mut conversation = Session::new(cwd, skill_loader)?;
 
     let mut event_sink = NoOpAgentEventSink {};
-    let response = agent::turn(client, &mut conversation, prompt, &mut event_sink).await?;
+    let tools = get_tools()?;
+    let response = agent::turn(client, &mut conversation, prompt, &mut event_sink, &tools).await?;
     writeln!(output, "{response}")?;
     Ok(())
 }
@@ -55,7 +57,9 @@ pub async fn run_interactive<M: agent::Model, R: BufRead, W: Write, L: SkillLoad
         }
 
         let mut event_sink = NoOpAgentEventSink {};
-        let response = agent::turn(client, &mut conversation, prompt, &mut event_sink).await?;
+        let tools = get_tools()?;
+        let response =
+            agent::turn(client, &mut conversation, prompt, &mut event_sink, &tools).await?;
         writeln!(writer, "{response}")?;
     }
 

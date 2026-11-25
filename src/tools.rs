@@ -35,7 +35,7 @@ pub(crate) enum ToolKind {
 pub(crate) type ExecuteRetVal<'a> =
     Pin<Box<dyn Future<Output = Result<Value, io::Error>> + Send + 'a>>;
 
-pub(crate) trait Tool: Send {
+pub(crate) trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn kind(&self) -> ToolKind;
     fn description(&self) -> &str;
@@ -82,8 +82,7 @@ pub fn get_tools() -> Result<HashMap<String, Box<dyn Tool>>, serde_json::Error> 
     ]))
 }
 
-pub async fn execute_tool_call(call: &ToolCall) -> Value {
-    let tools = get_tools().unwrap();
+pub async fn execute_tool_call(call: &ToolCall, tools: &HashMap<String, Box<dyn Tool>>) -> Value {
     let tool_name = call.function.name.as_str();
 
     if let Some(tool) = tools.get(tool_name) {

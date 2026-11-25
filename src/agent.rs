@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::error::Error;
 use std::fmt::Display;
@@ -8,7 +8,7 @@ use crate::agent::EventSinkError::DeliveryFailed;
 use crate::agent::ReplyContent::TextContent;
 use crate::session::Session;
 use crate::skills::Skill;
-use crate::tools::{ToolKind, execute_tool_call, get_tools, parse_arguments};
+use crate::tools::{Tool, ToolKind, execute_tool_call, parse_arguments};
 use crate::wire::ChatResponse;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
@@ -161,12 +161,12 @@ pub async fn turn<M, S>(
     session: &mut Session,
     prompt: &str,
     sink: &mut S,
+    tools: &HashMap<String, Box<dyn Tool>>,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>>
 where
     M: Model,
     S: AgentEventSink,
 {
-    let tools = get_tools()?;
     let tool_specs =
         serde_json::to_value(tools.values().map(|v| v.spec()).collect::<Vec<Value>>())?;
 
@@ -232,7 +232,7 @@ where
         }
 
         for tool_call in tool_calls {
-            // Temporary unrwap
+            // Temporary unwrap
             let tool = tools.get(&tool_call.function.name).unwrap();
 
             let args_by_name = parse_arguments(&tool_call.function.arguments)?;
@@ -253,10 +253,18 @@ where
 
             let () = sink.emit(update_event).await?;
 
-            let result = execute_tool_call(tool_call).await;
+            let result = execute_tool_call(tool_call, &tools).await;
 
             if let Some(error) = result["error"].as_str() {
                 eprintln!("Tool call error: {}", error);
+                // let tool_request = ToolUpdate {
+                //     tool_call_id: tool_call.id.clone(),
+                //     status: ToolCallStatus::Failed,
+                //     content: vec![TextContent {
+                //         text: error.to_string(),
+                //     }],
+                // };
+                // let () = sink.emit(tool_request).await?;
             } else {
                 let tool_request = ToolUpdate {
                     tool_call_id: tool_call.id.clone(),
@@ -289,6 +297,7 @@ mod tests {
 
     use tokio::fs;
 
+    use crate::tools::get_tools;
     use crate::{
         agent::AgentEvent::*,
         scripted_model::{
@@ -333,9 +342,17 @@ mod tests {
         let mut session = empty_session();
         let mut event_sink = TestEventSink::new();
 
-        let _ = turn(&model, &mut session, "Hello, world!", &mut event_sink)
-            .await
-            .expect("turn should succeed");
+        let tools = get_tools().expect("To retrieve tools");
+
+        let _ = turn(
+            &model,
+            &mut session,
+            "Hello, world!",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("turn should succeed");
 
         assert_eq!(event_sink.events.len(), 1);
         match &event_sink.events[0] {
@@ -361,13 +378,27 @@ mod tests {
 
         let mut event_sink = TestEventSink::new();
 
-        turn(&model, &mut session, "first question", &mut event_sink)
-            .await
-            .expect("first turn should succeed");
+        let tools = get_tools().expect("To retrieve tools");
 
-        turn(&model, &mut session, "second question", &mut event_sink)
-            .await
-            .expect("second turn should succeed");
+        turn(
+            &model,
+            &mut session,
+            "first question",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("first turn should succeed");
+
+        turn(
+            &model,
+            &mut session,
+            "second question",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("second turn should succeed");
 
         let requests = model.requests.lock().unwrap();
 
@@ -411,11 +442,13 @@ mod tests {
         let mut second_session = empty_session();
         let mut second_event_sink = TestEventSink::new();
 
+        let tools = get_tools().expect("To retrieve tools");
         turn(
             &model,
             &mut first_session,
             "first question",
             &mut first_event_sink,
+            &tools,
         )
         .await
         .expect("first conversation should succeed");
@@ -425,6 +458,7 @@ mod tests {
             &mut second_session,
             "second question",
             &mut second_event_sink,
+            &tools,
         )
         .await
         .expect("second conversation should succeed");
@@ -478,9 +512,16 @@ mod tests {
         let mut session = empty_session();
         let mut event_sink = TestEventSink::new();
 
-        turn(&model, &mut session, "first question", &mut event_sink)
-            .await
-            .expect("first conversation should succeed");
+        let tools = get_tools().expect("To retrieve tools");
+        turn(
+            &model,
+            &mut session,
+            "first question",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("first conversation should succeed");
 
         assert_eq!(event_sink.events.len(), 5);
 
@@ -532,9 +573,81 @@ mod tests {
         let mut session = empty_session();
         let mut event_sink = TestEventSink::new();
 
-        turn(&model, &mut session, "first question", &mut event_sink)
-            .await
-            .expect("first conversation should succeed");
+        let tools = get_tools().expect("To retrieve tools");
+        turn(
+            &model,
+            &mut session,
+            "first question",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("first conversation should succeed");
+
+        assert_eq!(event_sink.events.len(), 5);
+
+        check_assistant_text(&event_sink.events[0], "I'll try the read tool.");
+
+        check_tool_requested(
+            &event_sink.events[1],
+            expected_tool_call_id,
+            expected_tool_name,
+            "Read src/main.rs",
+            &ToolKind::Read,
+        );
+
+        let file_content = read_file_into_text_context("src/main.rs").await;
+        let expected_content = vec![file_content];
+
+        check_tool_updated(
+            &event_sink.events[2],
+            expected_tool_call_id,
+            &ToolCallStatus::InProgress,
+        );
+
+        check_tool_completed(
+            &event_sink.events[3],
+            expected_tool_call_id,
+            &expected_content,
+        );
+
+        check_assistant_text(&event_sink.events[4], "The answer is: banana");
+    }
+
+    #[tokio::test]
+    async fn tool_emits_failed_event_on_tool_failure() {
+        let expected_tool_call_id = "tool_request";
+        let expected_tool_name = "Read";
+
+        let tool_calls = vec![make_tool_call(
+            expected_tool_call_id,
+            expected_tool_name,
+            r#"{"file_path": "src/main.rs"}}"#,
+        )];
+        let responses = [
+            Done {
+                response: assistant_reply_with_tool_calls("I'll try the read tool.", tool_calls),
+            },
+            Done {
+                response: assistant_reply("The answer is: banana"),
+            },
+        ];
+
+        let model = ScriptedModel::new(VecDeque::from(responses));
+
+        let mut session = empty_session();
+        let mut event_sink = TestEventSink::new();
+
+        let tools = get_tools().expect("To retrieve tools");
+        turn(
+            &model,
+            &mut session,
+            "first question",
+            &mut event_sink,
+            &tools,
+        )
+        .await
+        .expect("first conversation should succeed");
 
         assert_eq!(event_sink.events.len(), 5);
 
@@ -626,7 +739,7 @@ mod tests {
     fn check_tool_completed(
         event: &AgentEvent,
         expected_tool_call_id: &str,
-        expected_content: &Vec<ReplyContent>,
+        expected_content: &[ReplyContent],
     ) {
         match event {
             ToolUpdate {
