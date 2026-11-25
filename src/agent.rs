@@ -244,6 +244,15 @@ where
                 arguments: parse_arguments(&tool_call.function.arguments)?,
             };
             let () = sink.emit(tool_request).await?;
+
+            let update_event = ToolUpdate {
+                tool_call_id: tool_call.id.clone(),
+                status: ToolCallStatus::InProgress,
+                content: vec![],
+            };
+
+            let () = sink.emit(update_event).await?;
+
             let result = execute_tool_call(tool_call).await;
 
             if let Some(error) = result["error"].as_str() {
@@ -448,9 +457,11 @@ mod tests {
 
     #[tokio::test]
     async fn tool_requests_with_text_show_agent_text() {
+        let expected_tool_call_id = "tool_request";
+        let expected_tool_name = "Read";
         let tool_calls = vec![make_tool_call(
-            "tool_request",
-            "Read",
+            expected_tool_call_id,
+            expected_tool_name,
             r#"{"file_path": "src/main.rs"}}"#,
         )];
         let responses = [
@@ -471,12 +482,30 @@ mod tests {
             .await
             .expect("first conversation should succeed");
 
-        assert_eq!(event_sink.events.len(), 4);
+        assert_eq!(event_sink.events.len(), 5);
 
         check_assistant_text(&event_sink.events[0], "I'll try the test tool.");
-        // TODO Check the ToolRequest
-        // TODO Check the ToolUpdate
-        check_assistant_text(&event_sink.events[3], "The answer is: banana");
+        check_tool_requested(
+            &event_sink.events[1],
+            expected_tool_call_id,
+            expected_tool_name,
+            "Read src/main.rs",
+            &ToolKind::Read,
+        );
+
+        check_tool_updated(
+            &event_sink.events[2],
+            expected_tool_call_id,
+            &ToolCallStatus::InProgress,
+        );
+
+        check_tool_updated(
+            &event_sink.events[3],
+            expected_tool_call_id,
+            &ToolCallStatus::Completed,
+        );
+
+        check_assistant_text(&event_sink.events[4], "The answer is: banana");
     }
 
     #[tokio::test]
@@ -507,7 +536,7 @@ mod tests {
             .await
             .expect("first conversation should succeed");
 
-        assert_eq!(event_sink.events.len(), 4);
+        assert_eq!(event_sink.events.len(), 5);
 
         check_assistant_text(&event_sink.events[0], "I'll try the read tool.");
 
@@ -522,13 +551,37 @@ mod tests {
         let file_content = read_file_into_text_context("src/main.rs").await;
         let expected_content = vec![file_content];
 
-        check_tool_completed(
+        check_tool_updated(
             &event_sink.events[2],
+            expected_tool_call_id,
+            &ToolCallStatus::InProgress,
+        );
+
+        check_tool_completed(
+            &event_sink.events[3],
             expected_tool_call_id,
             &expected_content,
         );
 
-        check_assistant_text(&event_sink.events[3], "The answer is: banana");
+        check_assistant_text(&event_sink.events[4], "The answer is: banana");
+    }
+
+    fn check_tool_updated(
+        event: &AgentEvent,
+        expected_tool_call_id: &str,
+        expected_status: &ToolCallStatus,
+    ) {
+        match event {
+            ToolUpdate {
+                tool_call_id,
+                status,
+                content: _,
+            } => {
+                assert_eq!(expected_tool_call_id, tool_call_id);
+                assert_eq!(status, expected_status);
+            }
+            _ => panic!("Expected a ToolUpdate"),
+        }
     }
 
     fn check_tool_requested(
