@@ -12,6 +12,7 @@ use crate::tools::{Tool, ToolKind, execute_tool_call, parse_arguments};
 use crate::wire::ChatResponse;
 use async_openai::Client;
 use async_openai::config::OpenAIConfig;
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::sync::OnceCell;
 
@@ -45,13 +46,13 @@ impl AgentEventSink for NoOpAgentEventSink {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub enum ReplyContent {
     TextContent { text: String },
 }
 
 #[allow(dead_code)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub enum ToolCallStatus {
     Pending,
     InProgress,
@@ -257,14 +258,14 @@ where
 
             if let Some(error) = result["error"].as_str() {
                 eprintln!("Tool call error: {}", error);
-                // let tool_request = ToolUpdate {
-                //     tool_call_id: tool_call.id.clone(),
-                //     status: ToolCallStatus::Failed,
-                //     content: vec![TextContent {
-                //         text: error.to_string(),
-                //     }],
-                // };
-                // let () = sink.emit(tool_request).await?;
+                let tool_request = ToolUpdate {
+                    tool_call_id: tool_call.id.clone(),
+                    status: ToolCallStatus::Failed,
+                    content: vec![TextContent {
+                        text: error.to_string(),
+                    }],
+                };
+                let () = sink.emit(tool_request).await?;
             } else {
                 let tool_request = ToolUpdate {
                     tool_call_id: tool_call.id.clone(),
@@ -293,11 +294,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use schemars::schema_for;
     use std::{collections::VecDeque, vec};
-
     use tokio::fs;
 
+    use crate::tools::fail_tool::FailTool;
     use crate::tools::get_tools;
+    use crate::tools::read_tool::ReadArgs;
     use crate::{
         agent::AgentEvent::*,
         scripted_model::{
@@ -534,16 +537,21 @@ mod tests {
             &ToolKind::Read,
         );
 
+        let empty_content = Vec::<ReplyContent>::new();
         check_tool_updated(
             &event_sink.events[2],
             expected_tool_call_id,
             &ToolCallStatus::InProgress,
+            &empty_content,
         );
 
+        let file_content = read_file_into_text_context("src/main.rs").await;
+        let expected_content = vec![file_content];
         check_tool_updated(
             &event_sink.events[3],
             expected_tool_call_id,
             &ToolCallStatus::Completed,
+            &expected_content,
         );
 
         check_assistant_text(&event_sink.events[4], "The answer is: banana");
@@ -596,6 +604,7 @@ mod tests {
             &ToolKind::Read,
         );
 
+        let empty_content = Vec::<ReplyContent>::new();
         let file_content = read_file_into_text_context("src/main.rs").await;
         let expected_content = vec![file_content];
 
@@ -603,6 +612,7 @@ mod tests {
             &event_sink.events[2],
             expected_tool_call_id,
             &ToolCallStatus::InProgress,
+            &empty_content,
         );
 
         check_tool_completed(
@@ -618,6 +628,19 @@ mod tests {
     async fn tool_emits_failed_event_on_tool_failure() {
         let expected_tool_call_id = "tool_request";
         let expected_tool_name = "Read";
+
+        let failing_read_tool: Box<dyn Tool> = Box::new(FailTool {
+            name: expected_tool_name.to_string(),
+            kind: ToolKind::Read,
+            description: "Read and return the contents of a file".to_string(),
+            title: "Read src/main.rs".to_string(),
+            params: serde_json::to_value(schema_for!(ReadArgs)).expect("to serialize"),
+        });
+
+        let tools = HashMap::<String, Box<dyn Tool>>::from([(
+            expected_tool_name.to_string(),
+            failing_read_tool,
+        )]);
 
         let tool_calls = vec![make_tool_call(
             expected_tool_call_id,
@@ -638,7 +661,6 @@ mod tests {
         let mut session = empty_session();
         let mut event_sink = TestEventSink::new();
 
-        let tools = get_tools().expect("To retrieve tools");
         turn(
             &model,
             &mut session,
@@ -661,18 +683,21 @@ mod tests {
             &ToolKind::Read,
         );
 
-        let file_content = read_file_into_text_context("src/main.rs").await;
-        let expected_content = vec![file_content];
-
+        let empty_content = Vec::<ReplyContent>::new();
         check_tool_updated(
             &event_sink.events[2],
             expected_tool_call_id,
             &ToolCallStatus::InProgress,
+            &empty_content,
         );
 
-        check_tool_completed(
+        let expected_content = vec![TextContent {
+            text: "Read failed. Error: Test tool error".to_string(),
+        }];
+        check_tool_updated(
             &event_sink.events[3],
             expected_tool_call_id,
+            &ToolCallStatus::Failed,
             &expected_content,
         );
 
@@ -683,15 +708,17 @@ mod tests {
         event: &AgentEvent,
         expected_tool_call_id: &str,
         expected_status: &ToolCallStatus,
+        expected_content: &[ReplyContent],
     ) {
         match event {
             ToolUpdate {
                 tool_call_id,
                 status,
-                content: _,
+                content,
             } => {
                 assert_eq!(expected_tool_call_id, tool_call_id);
                 assert_eq!(status, expected_status);
+                assert_eq!(content, expected_content);
             }
             _ => panic!("Expected a ToolUpdate"),
         }

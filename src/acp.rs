@@ -214,6 +214,8 @@ mod tests {
         time::{sleep, timeout},
     };
 
+    use crate::agent::ToolCallStatus;
+    use crate::tools::ToolKind;
     use crate::{
         acp::{
             MAX_FRAME_BYTES, Request,
@@ -584,8 +586,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prompt_cancelation_stops_tools() {
-        let pid_filename = "prompt_cancelation_stops_tools.pid";
+    async fn prompt_cancellation_stops_tools() {
+        let pid_filename = "prompt_cancellation_stops_tools.pid";
 
         match fs::remove_file(pid_filename).await {
             Ok(_) => (),
@@ -626,7 +628,20 @@ mod tests {
 
         client.cancel(&session_id).await;
 
+        let tool_started = client.read_frame().await;
+        check_tool_request(
+            &tool_started,
+            &session_id,
+            "Run a bash command",
+            "Bash",
+            &ToolKind::Execute,
+        );
+
+        let tool_updated = client.read_frame().await;
+        check_tool_call_update(&tool_updated, &session_id, &ToolCallStatus::InProgress);
+
         let response = client.read_frame().await;
+
         assert_eq!(response["id"], prompt_request_id);
         assert_eq!(response["result"]["stopReason"], "cancelled");
         assert!(response["error"].is_null());
@@ -639,6 +654,44 @@ mod tests {
             .await
             .expect("agent task should join")
             .expect("ACP transport should shutdown cleanly");
+    }
+
+    fn check_tool_request(
+        response: &Value,
+        session_id: &str,
+        title: &str,
+        name: &str,
+        kind: &ToolKind,
+    ) {
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["method"], "session/update");
+        assert_eq!(response["params"]["sessionId"], session_id);
+        assert_eq!(response["params"]["update"]["sessionUpdate"], "tool_call");
+        assert_eq!(response["params"]["update"]["title"], title);
+        assert_eq!(response["params"]["update"]["name"], name);
+        assert_eq!(
+            response["params"]["update"]["kind"],
+            serde_json::to_value(kind).expect("to serialize")
+        );
+    }
+
+    fn check_tool_call_update(
+        response: &Value,
+        session_id: &str,
+        status: &ToolCallStatus,
+        // content: &[ReplyContent],
+    ) {
+        assert_eq!(response["jsonrpc"], "2.0");
+        assert_eq!(response["method"], "session/update");
+        assert_eq!(response["params"]["sessionId"], session_id);
+        assert_eq!(
+            response["params"]["update"]["sessionUpdate"],
+            "tool_call_update"
+        );
+        assert_eq!(
+            response["params"]["update"]["status"],
+            serde_json::to_value(status).expect("to serialize")
+        );
     }
 
     fn check_agent_message_chunk(response: Value, session_id: &str, message: &str) {

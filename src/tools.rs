@@ -6,7 +6,8 @@ use std::{
 };
 
 mod bash_tool;
-mod read_tool;
+pub(crate) mod fail_tool;
+pub(crate) mod read_tool;
 mod write_tool;
 
 use crate::{
@@ -19,13 +20,14 @@ use crate::{
 };
 use regex::Regex;
 use schemars::schema_for;
+use serde::Serialize;
 use serde_json::{Value, json};
 
 const READ: &str = "Read";
 const WRITE: &str = "Write";
 const BASH: &str = "Bash";
 
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone, Serialize)]
 pub(crate) enum ToolKind {
     Read,
     Edit,
@@ -87,7 +89,16 @@ pub async fn execute_tool_call(call: &ToolCall, tools: &HashMap<String, Box<dyn 
 
     if let Some(tool) = tools.get(tool_name) {
         let args_by_name = parse_arguments(&call.function.arguments).unwrap();
-        tool.execute(args_by_name).await.unwrap()
+        let result = tool.execute(args_by_name).await;
+        match result {
+            Ok(result) => result,
+            Err(error) => {
+                json!({
+                      "ok": false,
+                      "error": format!("{} failed. Error: {}", tool_name, error.to_string())
+                })
+            }
+        }
     } else {
         json!({
               "ok": false,

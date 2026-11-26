@@ -1,6 +1,7 @@
 # ACP learning progress
 
-This ledger tracks the current hands-on task sequence. The previous architecture-first and standalone-example course has been retired.
+This ledger tracks the current hands-on task sequence. The previous architecture-first and standalone-example course has
+been retired.
 
 ## Working decisions
 
@@ -13,33 +14,41 @@ This ledger tracks the current hands-on task sequence. The previous architecture
 - Do not use an ACP SDK or external ACP schema crate.
 - Use high-level, goal-driven tasks with machine-verifiable acceptance checks.
 - The learner owns the design and writes the Rust.
-- When the learner identifies code or tests as unfinished, review only the portion they say is ready. Treat scaffolding, temporary diagnostics, TODOs, and expected gaps as intentional; do not critique or pre-solve them unless asked. Reserve full requirements and coverage review for when the learner says the work is ready.
+- When the learner identifies code or tests as unfinished, review only the portion they say is ready. Treat scaffolding,
+  temporary diagnostics, TODOs, and expected gaps as intentional; do not critique or pre-solve them unless asked.
+  Reserve full requirements and coverage review for when the learner says the work is ready.
 
 ## Task status
 
-| Task | Status | Goal | Evidence |
-|---|---|---|---|
-| [1 — Shared core](01-shared-core.md) | complete | Caller-owned history; returned answer; `-p` preserved | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29 |
-| [2 — Interactive CLI](02-interactive-cli.md) | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05 |
-| [3 — ACP initialize](03-acp-initialize.md) | complete | Real binary completes ACP initialization through Tokio stdio | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09 |
-| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present |
-| [5 — Session creation](05-session-new.md) | complete | Create unique UUID v7 session IDs backed by a per-connection registry | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19 |
-| [6 — Prompt turn](06-session-prompt.md) | complete | Run a model turn and report its answer over ACP without blocking the reader | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded |
-| [6b — Cleanup](06b-cleanup.md) | paused | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint. |
-| [7 — Cancellation](07-cancellation.md) | complete | Cancel a running prompt without reporting an error and leave the session reusable | All 68 Rust tests, premerge, build, and 8/8 external ACP cases pass on 2026-11-18. Coverage includes model cancellation, rollback/reuse, idle/unknown sessions, early sender registration, cancellation precedence over a ready model error, and direct-child tool termination. User-confirmed Zed cancellation/session-reuse smoke test also passed. Scope limitations are recorded below. |
+| Task                                                     | Status   | Goal                                                                                                        | Evidence                                                                                                                                                                                                                                                                                                                                                                                    |
+|----------------------------------------------------------|----------|-------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [1 — Shared core](01-shared-core.md)                     | complete | Caller-owned history; returned answer; `-p` preserved                                                       | Four deterministic behavioral tests pass; all acceptance commands exited 0 on 2026-09-29                                                                                                                                                                                                                                                                                                    |
+| [2 — Interactive CLI](02-interactive-cli.md)             | complete | Multi-turn terminal conversation; `/exit`, `/quit`, and EOF                                                 | All required parser and interaction behaviors pass; all acceptance commands exited 0 on 2026-10-05                                                                                                                                                                                                                                                                                          |
+| [3 — ACP initialize](03-acp-initialize.md)               | complete | Real binary completes ACP initialization through Tokio stdio                                                | All 41 tests and all 7 external handshake cases passed; every acceptance command exited 0 on 2026-10-09                                                                                                                                                                                                                                                                                     |
+| [4 — Reader and writer tasks](04-reader-writer-tasks.md) | complete | Preserve ACP behavior with separate input and single-owner output tasks                                     | All 43 tests and all 7 unchanged handshake cases passed; both duplex acceptance cases are present                                                                                                                                                                                                                                                                                           |
+| [5 — Session creation](05-session-new.md)                | complete | Create unique UUID v7 session IDs backed by a per-connection registry                                       | All 48 Rust tests and all 8 black-box ACP tests passed; final acceptance commands exited 0 on 2026-10-19                                                                                                                                                                                                                                                                                    |
+| [6 — Prompt turn](06-session-prompt.md)                  | complete | Run a model turn and report its answer over ACP without blocking the reader                                 | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded                                                                                                                                                                                                                                                              |
+| [6b — Cleanup](06b-cleanup.md)                           | paused   | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint.                       |
+| [7 — Cancellation](07-cancellation.md)                   | complete | Cancel a running prompt without reporting an error and leave the session reusable                           | All 68 Rust tests, premerge, build, and 8/8 external ACP cases pass on 2026-11-18. Coverage includes model cancellation, rollback/reuse, idle/unknown sessions, early sender registration, cancellation precedence over a ready model error, and direct-child tool termination. User-confirmed Zed cancellation/session-reuse smoke test also passed. Scope limitations are recorded below. |
 
-| [8 — Turn events](08-turn-events.md) | in progress | Report assistant replies and tool progress during a turn | Started 2026-11-20 at the learner's explicit direction; guide/source review is next. Task 6b's outstanding acceptance review is deferred, not a prerequisite. |
+| [8 — Turn events](08-turn-events.md) | in progress | Report assistant replies and tool progress during a turn |
+Started 2026-11-20 at the learner's explicit direction; guide/source review is next. Task 6b's outstanding acceptance
+review is deferred, not a prerequisite. |
 
-Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a task complete only when every listed command exits with status 0 and its required automated cases are present in the test/checker output.
+Use `not started`, `in progress`, `paused`, `complete`, or `blocked`. Mark a task complete only when every listed
+command exits with status 0 and its required automated cases are present in the test/checker output.
 
 ## Session checkpoint — 2026-09-29
 
 ### Current understanding
 
 - `Conversation` owns the ordered provider-visible message history and keeps its messages private.
-- The terminal frontend owns each conversation; `agent::turn` temporarily borrows it as `&mut Conversation` and retains user, assistant, and tool messages.
-- `agent::turn` returns final assistant text rather than printing it, allowing each frontend to choose its presentation mechanism.
-- `terminal::run_once` accepts a `Write` output boundary, so production can use stdout while tests use an in-memory `Vec<u8>`.
+- The terminal frontend owns each conversation; `agent::turn` temporarily borrows it as `&mut Conversation` and retains
+  user, assistant, and tool messages.
+- `agent::turn` returns final assistant text rather than printing it, allowing each frontend to choose its presentation
+  mechanism.
+- `terminal::run_once` accepts a `Write` output boundary, so production can use stdout while tests use an in-memory
+  `Vec<u8>`.
 - A small `Model` trait allows deterministic scripted tests without network requests or credentials.
 
 ### Source checkpoint
@@ -57,16 +66,21 @@ Use `not started`, `in progress`, `paused`, `complete`, or `blocked`.  Mark a ta
 3. Introduce only the input/output seams needed for deterministic interactive tests.
 4. Implement `/exit`, `/quit`, EOF, and multi-turn behavior one requirement at a time.
 
-Rust principles practiced in Task 1: model state with a struct, preserve invariants with private fields, express temporary mutation with `&mut`, return data instead of performing caller-specific effects, use trait bounds at genuinely variable boundaries, and inject `Write` for testable output.
+Rust principles practiced in Task 1: model state with a struct, preserve invariants with private fields, express
+temporary mutation with `&mut`, return data instead of performing caller-specific effects, use trait bounds at genuinely
+variable boundaries, and inject `Write` for testable output.
 
 ## Session checkpoint — 2026-10-01
 
 ### Current understanding
 
 - Clap models a presence flag such as `--acp` with `bool`; `false` means absent and `true` means present.
-- `run_interactive` owns one `Conversation` outside its read loop, so later turns include earlier user and assistant messages.
-- Injected `BufRead` and `Write` boundaries make the entire interactive transcript deterministic, including prompts and the final prompt before EOF or an exit command.
-- Terminal transcript assertions prove presentation behavior, while recorded model-request assertions prove turn count and shared conversation history.
+- `run_interactive` owns one `Conversation` outside its read loop, so later turns include earlier user and assistant
+  messages.
+- Injected `BufRead` and `Write` boundaries make the entire interactive transcript deterministic, including prompts and
+  the final prompt before EOF or an exit command.
+- Terminal transcript assertions prove presentation behavior, while recorded model-request assertions prove turn count
+  and shared conversation history.
 - `/exit`, `/quit`, and EOF must be handled by the outer terminal loop before another call to `agent::turn`.
 
 ### Source checkpoint
@@ -74,22 +88,27 @@ Rust principles practiced in Task 1: model state with a struct, preserve invaria
 - Task 2 implementation and nearly all required deterministic coverage are present.
 - The branch is `master`, two commits ahead of `origin/master`, with an uncommitted change in `src/terminal.rs`.
 - On 2026-10-01, formatting, Cargo check, all 13 tests, and `cargo run --locked -- --help` exited 0.
-- Task 2 is not yet complete: `interactive_quit_command_does_not_start_another_turn` is named for `/quit` but its input currently contains `/exit`.
+- Task 2 is not yet complete: `interactive_quit_command_does_not_start_another_turn` is named for `/quit` but its input
+  currently contains `/exit`.
 
 ### Exact resume point
 
 1. In `src/terminal.rs`, change the quit test input from `b"Hello.\n/exit\n"` to `b"Hello.\n/quit\n"`.
 2. Run the focused quit test, then all four Task 2 acceptance commands.
 3. If every command exits 0, mark Task 2 complete and add its final validation record below.
-4. Begin Task 3 by inspecting `src/main.rs`, `Cargo.toml`, `src/wire.rs`, and `guides/acp/check_handshake.py`; the first design decision is where ACP framing and dispatch should live.
+4. Begin Task 3 by inspecting `src/main.rs`, `Cargo.toml`, `src/wire.rs`, and `guides/acp/check_handshake.py`; the first
+   design decision is where ACP framing and dispatch should live.
 
-Rust principles practiced in Task 2: model mutually exclusive CLI options with Clap, keep conversation state outside the outer loop, distinguish EOF from an empty line, inject synchronous I/O traits for deterministic frontend tests, and assert internal requests when output alone cannot prove retained state.
+Rust principles practiced in Task 2: model mutually exclusive CLI options with Clap, keep conversation state outside the
+outer loop, distinguish EOF from an empty line, inject synchronous I/O traits for deterministic frontend tests, and
+assert internal requests when output alone cannot prove retained state.
 
 ## Session checkpoint — 2026-10-05
 
 ### Current understanding
 
-- Task 2's acceptance suite covers mode selection, parser rejection cases, shared interactive history, both exit commands, EOF, and one-shot behavior without a terminal, network, or API key.
+- Task 2's acceptance suite covers mode selection, parser rejection cases, shared interactive history, both exit
+  commands, EOF, and one-shot behavior without a terminal, network, or API key.
 - The `/quit` regression test now feeds `/quit`, so its passing result is direct evidence for that required behavior.
 - All four acceptance commands must pass in the same verified tree before the milestone can be closed.
 
@@ -97,13 +116,15 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 - Task 2 is complete.
 - The branch is `master`, three commits ahead of `origin/master`; uncommitted guide changes are present.
-- On 2026-10-05, the focused `/quit` test and all four Task 2 acceptance commands exited 0; the full suite passed all 13 tests.
+- On 2026-10-05, the focused `/quit` test and all four Task 2 acceptance commands exited 0; the full suite passed all 13
+  tests.
 - No Task 2 work remains unverified.
 
 ### Exact resume point
 
 1. Begin Task 3 by reading `03-acp-initialize.md`.
-2. Inspect `src/main.rs`, `Cargo.toml`, `src/wire.rs`, and `guides/acp/check_handshake.py` before choosing where ACP framing and dispatch should live.
+2. Inspect `src/main.rs`, `Cargo.toml`, `src/wire.rs`, and `guides/acp/check_handshake.py` before choosing where ACP
+   framing and dispatch should live.
 3. Verify the current behavior of `--acp` before making the first Task 3 change.
 
 ## Session checkpoint — 2026-10-05 (Task 3 started)
@@ -112,15 +133,18 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 - ACP initialization is a protocol concern and does not need a model provider or API key.
 - `--acp` must be routed before dotenv loading and OpenRouter client construction.
-- `BufRead::read_line` returns `0` when EOF occurs before any bytes are read, allowing clean EOF to end ACP mode successfully.
-- Missing test coverage should be described by the behavior it must prove; the learner writes the test unless they ask for implementation help.
+- `BufRead::read_line` returns `0` when EOF occurs before any bytes are read, allowing clean EOF to end ACP mode
+  successfully.
+- Missing test coverage should be described by the behavior it must prove; the learner writes the test unless they ask
+  for implementation help.
 
 ### Source checkpoint
 
 - Task 3 is in progress.
 - `src/main.rs` routes `--acp` before provider configuration.
 - `src/acp.rs` treats empty stdin as clean EOF, with a focused regression test.
-- Formatting, Cargo check, all 16 tests, a build, and a credential-free subprocess probe passed before this checkpoint was committed.
+- Formatting, Cargo check, all 16 tests, a build, and a credential-free subprocess probe passed before this checkpoint
+  was committed.
 
 ### Exact resume point
 
@@ -133,137 +157,204 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- An `async fn` remains blocking if it calls synchronous I/O; ACP stdin now uses Tokio's `AsyncBufRead` boundary and `BufReader<Stdin>` in production.
+- An `async fn` remains blocking if it calls synchronous I/O; ACP stdin now uses Tokio's `AsyncBufRead` boundary and
+  `BufReader<Stdin>` in production.
 - `read_line` appends to its `String`, so a reused frame buffer must be cleared before each read.
-- `read_line` returns after a newline or EOF. Empty EOF is clean shutdown, while nonempty input ending at EOF without `\n` is an incomplete frame.
+- `read_line` returns after a newline or EOF. Empty EOF is clean shutdown, while nonempty input ending at EOF without
+  `\n` is an incomplete frame.
 - A boxed `dyn Error` can be checked by downcasting to `std::io::Error` and then comparing its `ErrorKind`.
-- A per-frame `take` adapter with a limit one byte above the policy can distinguish an exactly 64 KiB frame from an oversized frame without unbounded allocation.
+- A per-frame `take` adapter with a limit one byte above the policy can distinguish an exactly 64 KiB frame from an
+  oversized frame without unbounded allocation.
 
 ### Source checkpoint
 
 - Task 3 is in progress on `master`.
-- ACP input uses Tokio async I/O, reads multiple bounded frames through clean EOF, and rejects an unterminated final frame as `UnexpectedEof`.
+- ACP input uses Tokio async I/O, reads multiple bounded frames through clean EOF, and rejects an unterminated final
+  frame as `UnexpectedEof`.
 - `src/acp.rs` applies a per-frame `AsyncReadExt::take` adapter and rejects oversized input as `InvalidData`.
-- Exact-limit and one-byte-over tests are present. The focused boundary tests, formatting, Cargo check, and all 20 tests passed.
+- Exact-limit and one-byte-over tests are present. The focused boundary tests, formatting, Cargo check, and all 20 tests
+  passed.
 
 ### Exact resume point
 
-1. Continue Task 3 with the ACP output boundary: decide just in time how `run_acp` should receive an async writer while preserving one stdout owner.
+1. Continue Task 3 with the ACP output boundary: decide just in time how `run_acp` should receive an async writer while
+   preserving one stdout owner.
 2. Add compact newline-terminated response writing and explicit flushing before expanding dispatch.
-3. JSON-RPC classification and dispatch, initialization responses, unknown-method errors, and full checker acceptance remain unfinished.
+3. JSON-RPC classification and dispatch, initialization responses, unknown-method errors, and full checker acceptance
+   remain unfinished.
 
 ## Session checkpoint — 2026-10-06 (CodeCrafters skills)
 
 ### Current understanding
 
-- Skills are loaded once into a per-session `BTreeMap`, which gives deterministic name ordering and avoids filesystem access on every turn.
-- `Session` owns both provider-visible conversation history and the loaded skill snapshot; `agent::turn` consumes shared session state, so terminal and future ACP prompts can use the same skill behavior.
-- Skill resolution belongs in the shared agent path rather than `terminal.rs`, because terminal and ACP are separate frontends.
-- A leading slash command resolves its first whitespace-separated token against the session snapshot; a recognized command replaces the provider-visible user prompt with only that skill's body.
-- Skill discovery still exposes only names and descriptions in the initial system message, so uninvoked skill bodies are not sent to the model.
+- Skills are loaded once into a per-session `BTreeMap`, which gives deterministic name ordering and avoids filesystem
+  access on every turn.
+- `Session` owns both provider-visible conversation history and the loaded skill snapshot; `agent::turn` consumes shared
+  session state, so terminal and future ACP prompts can use the same skill behavior.
+- Skill resolution belongs in the shared agent path rather than `terminal.rs`, because terminal and ACP are separate
+  frontends.
+- A leading slash command resolves its first whitespace-separated token against the session snapshot; a recognized
+  command replaces the provider-visible user prompt with only that skill's body.
+- Skill discovery still exposes only names and descriptions in the initial system message, so uninvoked skill bodies are
+  not sent to the model.
 
 ### Source checkpoint
 
-- `src/session.rs` constructs one session from a `SkillLoader`, retains the resulting skills, and adds the level-one skill summary.
+- `src/session.rs` constructs one session from a `SkillLoader`, retains the resulting skills, and adds the level-one
+  skill summary.
 - `src/terminal.rs` creates one `Session` for one-shot or interactive use and no longer reloads skills separately.
 - `src/agent.rs` contains `expand_skill_prompt` and calls it before adding the user message.
 - `git status --short` reported no entries at checkpoint time.
-- The skill-expansion changes have not been validated since the final implementation was typed; no new focused tests or CodeCrafters stage run were completed in this session.
+- The skill-expansion changes have not been validated since the final implementation was typed; no new focused tests or
+  CodeCrafters stage run were completed in this session.
 
 ### Exact resume point
 
-1. Read `expand_skill_prompt` and manually confirm the intended policies for an ordinary prompt, a recognized `/skill`, and an unknown slash command.
-2. Add focused coverage proving that only the invoked skill body reaches the model and that ordinary prompts remain unchanged.
+1. Read `expand_skill_prompt` and manually confirm the intended policies for an ordinary prompt, a recognized `/skill`,
+   and an unknown slash command.
+2. Add focused coverage proving that only the invoked skill body reaches the model and that ordinary prompts remain
+   unchanged.
 3. Add lifecycle coverage proving that an interactive session calls `SkillLoader::load_skills` once.
 4. Run `cargo fmt --all -- --check`, `cargo check --locked`, `cargo test --locked`, and the CodeCrafters `jd8` stage.
-5. After the CodeCrafters work is verified, resume ACP Task 3 at the output-boundary decision recorded in the previous checkpoint.
+5. After the CodeCrafters work is verified, resume ACP Task 3 at the output-boundary decision recorded in the previous
+   checkpoint.
 
 ## Session checkpoint — 2026-10-07 (Task 3 classification)
 
 ### Current understanding
 
 - ACP stdio needs newline framing because an async byte stream does not preserve message boundaries.
-- `AsyncBufRead` supports delimiter-oriented operations by retaining bytes across partial reads and preserving bytes after a delimiter.
-- JSON-RPC request, notification, and response envelopes must be classified before method-specific deserialization; notifications have no ID and receive no response.
-- A Tokio duplex stream can be modeled as two bounded directional byte queues. An empty open stream means "wait," while an empty closed stream means EOF.
-- Flushing pushes bytes held by a buffered writer into its underlying async writer; it does not prove that the peer processed them.
-- `Cursor` is the simplest seam for predetermined finite input, while `duplex` is useful when output or live two-way behavior must be observed.
-- Future milestone work will happen on feature branches; strict formatting, Clippy, and test checks should gate completed work before it merges into `master`, while pull requests remain optional for this solo repository.
+- `AsyncBufRead` supports delimiter-oriented operations by retaining bytes across partial reads and preserving bytes
+  after a delimiter.
+- JSON-RPC request, notification, and response envelopes must be classified before method-specific deserialization;
+  notifications have no ID and receive no response.
+- A Tokio duplex stream can be modeled as two bounded directional byte queues. An empty open stream means "wait," while
+  an empty closed stream means EOF.
+- Flushing pushes bytes held by a buffered writer into its underlying async writer; it does not prove that the peer
+  processed them.
+- `Cursor` is the simplest seam for predetermined finite input, while `duplex` is useful when output or live two-way
+  behavior must be observed.
+- Future milestone work will happen on feature branches; strict formatting, Clippy, and test checks should gate
+  completed work before it merges into `master`, while pull requests remain optional for this solo repository.
 
 ### Source checkpoint
 
 - Task 3 remains in progress on `master` at commit `0b8c668`; the working tree was clean before this checkpoint entry.
-- `src/acp.rs` has bounded async input framing, an injected async writer, compact newline-terminated frame writing with flushing, JSON-RPC shape classification, and a notification no-response regression test.
-- `run_acp` parses each frame into `Value`, classifies it, validates request envelopes through the existing `Request<Value>` path, and ignores notifications and responses as required at this stage.
-- `write_frame` is tested but is not yet connected to production dispatch, so the production writer parameter remains intentionally unused.
-- The focused classifier suite passed all 10 tests earlier in the session. The complete acceptance suite and external handshake checker have not been run against the current tree.
+- `src/acp.rs` has bounded async input framing, an injected async writer, compact newline-terminated frame writing with
+  flushing, JSON-RPC shape classification, and a notification no-response regression test.
+- `run_acp` parses each frame into `Value`, classifies it, validates request envelopes through the existing
+  `Request<Value>` path, and ignores notifications and responses as required at this stage.
+- `write_frame` is tested but is not yet connected to production dispatch, so the production writer parameter remains
+  intentionally unused.
+- The focused classifier suite passed all 10 tests earlier in the session. The complete acceptance suite and external
+  handshake checker have not been run against the current tree.
 - The blocking GitHub formatting and Clippy job was removed; GitHub CI now runs only the existing test matrix.
 
 ### Exact resume point
 
-1. Establish the feature-branch workflow for the remainder of Task 3 and add one convenient local command or Zed task that runs the pre-merge quality checks.
-2. Restore strict formatting, Clippy, and test checks for pull requests before merging the completed feature branch; configure a GitHub ruleset if those checks should technically block merges rather than merely report failures.
-3. Demonstrate that a notification with `"jsonrpc":"1.0"` is currently accepted, confirming the common-envelope validation gap.
-4. Add common JSON-RPC version validation for every classified message without moving method-specific validation into the shape classifier.
+1. Establish the feature-branch workflow for the remainder of Task 3 and add one convenient local command or Zed task
+   that runs the pre-merge quality checks.
+2. Restore strict formatting, Clippy, and test checks for pull requests before merging the completed feature branch;
+   configure a GitHub ruleset if those checks should technically block merges rather than merely report failures.
+3. Demonstrate that a notification with `"jsonrpc":"1.0"` is currently accepted, confirming the common-envelope
+   validation gap.
+4. Add common JSON-RPC version validation for every classified message without moving method-specific validation into
+   the shape classifier.
 5. Add focused coverage for valid and invalid protocol versions, then run the ACP test subset.
-6. Continue with `initialize` parameter validation and dispatch, connect `write_frame`, preserve string and numeric request IDs, and implement unknown-method `-32601` responses.
-7. Finish Task 3 by running every command in `03-acp-initialize.md` and the subprocess handshake checker; record the report path and results.
+6. Continue with `initialize` parameter validation and dispatch, connect `write_frame`, preserve string and numeric
+   request IDs, and implement unknown-method `-32601` responses.
+7. Finish Task 3 by running every command in `03-acp-initialize.md` and the subprocess handshake checker; record the
+   report path and results.
 
 ## Session checkpoint — 2026-10-08 (Task 3 initialize response)
 
 ### Current understanding
 
-- JSON-RPC version is a common-envelope invariant, so `run_acp` validates it once before request, notification, or response classification; method-specific request validation remains separate.
-- `serde_json::Value::to_string` serializes JSON, including quotes around JSON strings; `Value::as_str` extracts a JSON string for comparison.
-- `serde_json::to_value` converts a serializable Rust value into `Value`, while `serde_json::from_value` deserializes a `Value` into a Rust type.
-- `SuccessResponse<T>` is a useful outgoing envelope because `T` can be the method-specific result while the JSON-RPC version and correlated ID remain common.
-- A function returning `SuccessResponse<S>` cannot construct one concrete response body while promising an arbitrary caller-selected `S`; combining request, response, writer, and serialization generics made the increment too large to reason about.
-- Wire-level tests should inspect the emitted `Value` independently rather than deserialize it with the same production type that serialized it.
+- JSON-RPC version is a common-envelope invariant, so `run_acp` validates it once before request, notification, or
+  response classification; method-specific request validation remains separate.
+- `serde_json::Value::to_string` serializes JSON, including quotes around JSON strings; `Value::as_str` extracts a JSON
+  string for comparison.
+- `serde_json::to_value` converts a serializable Rust value into `Value`, while `serde_json::from_value` deserializes a
+  `Value` into a Rust type.
+- `SuccessResponse<T>` is a useful outgoing envelope because `T` can be the method-specific result while the JSON-RPC
+  version and correlated ID remain common.
+- A function returning `SuccessResponse<S>` cannot construct one concrete response body while promising an arbitrary
+  caller-selected `S`; combining request, response, writer, and serialization generics made the increment too large to
+  reason about.
+- Wire-level tests should inspect the emitted `Value` independently rather than deserialize it with the same production
+  type that serialized it.
 
 ### Source checkpoint
 
-- Task 3 remains in progress on branch `initialize-acp` at commit `f059566`, tracking `origin/initialize-acp`; the working tree was clean before this ledger entry.
-- `run_acp` now dispatches `initialize`, preserves the request ID, builds a `SuccessResponse<Value>`, and connects production dispatch to `write_frame`.
-- The initialize response currently selects protocol version 1, emits an empty `agentCapabilities` object and empty `authMethods` array, and is covered by a wire-level response test.
-- `cargo check --locked` and the focused initialize-response test exited 0 on 2026-10-08; the focused test passed 1 test.
-- The test target still reports two warnings: unused imports for `serde_json::Value` and `SuccessResponse`. The response test also calls `validate_version` twice.
-- Initialize params are not yet deserialized or validated. Unknown request methods are still ignored, and the complete Task 3 suite and handshake checker remain unverified.
+- Task 3 remains in progress on branch `initialize-acp` at commit `f059566`, tracking `origin/initialize-acp`; the
+  working tree was clean before this ledger entry.
+- `run_acp` now dispatches `initialize`, preserves the request ID, builds a `SuccessResponse<Value>`, and connects
+  production dispatch to `write_frame`.
+- The initialize response currently selects protocol version 1, emits an empty `agentCapabilities` object and empty
+  `authMethods` array, and is covered by a wire-level response test.
+- `cargo check --locked` and the focused initialize-response test exited 0 on 2026-10-08; the focused test passed 1
+  test.
+- The test target still reports two warnings: unused imports for `serde_json::Value` and `SuccessResponse`. The response
+  test also calls `validate_version` twice.
+- Initialize params are not yet deserialized or validated. Unknown request methods are still ignored, and the complete
+  Task 3 suite and handshake checker remain unverified.
 
 ### Exact resume point
 
-1. Make only the no-behavior-change test cleanup in `src/acp.rs`: remove the unused `serde_json::Value` and `SuccessResponse` imports and one duplicate `validate_version` call.
-2. Run `cargo fmt --all -- --check`, `cargo check --locked`, and the focused initialize-response test; confirm the warnings are gone.
-3. Before adding more dispatch behavior, decide the smallest `InitializeParams` representation that enforces required `protocolVersion` and object-shaped `clientCapabilities` while accepting ACP extension fields.
-4. Add focused missing/invalid initialize-params coverage, then deserialize params only inside the `"initialize"` branch.
+1. Make only the no-behavior-change test cleanup in `src/acp.rs`: remove the unused `serde_json::Value` and
+   `SuccessResponse` imports and one duplicate `validate_version` call.
+2. Run `cargo fmt --all -- --check`, `cargo check --locked`, and the focused initialize-response test; confirm the
+   warnings are gone.
+3. Before adding more dispatch behavior, decide the smallest `InitializeParams` representation that enforces required
+   `protocolVersion` and object-shaped `clientCapabilities` while accepting ACP extension fields.
+4. Add focused missing/invalid initialize-params coverage, then deserialize params only inside the `"initialize"`
+   branch.
 5. Preserve the current working response before proceeding to string-ID coverage and unknown-method `-32601` responses.
 
 ## Session checkpoint — 2026-10-08 (Task 3 dispatch and client info)
 
 ### Current understanding
 
-- Method dispatch is a useful boundary now that requests have two observable outcomes: `initialize` success and correlated `-32601` errors for unknown methods.
-- Separate `SuccessResponse<T>` and `ErrorResponse` types prevent constructing a response with both `result` and `error` or with neither.
-- `serde_json::from_value::<InitializeParams>` consumes a generic JSON value and applies the required/optional rules encoded by the target Serde type.
-- `Option<Implementation>` accepts omitted or null `clientInfo`; when the object is present, plain `String` fields make `name` and `version` required while `Option<String>` keeps `title` optional.
-- Unknown fields are ignored by Serde by default, which preserves ACP extensibility while the local type grows incrementally.
-- `cargo test` builds test artifacts but does not guarantee that `target/debug/hobgoblin` is current; run `cargo build --locked` before launching the subprocess checker against that path.
+- Method dispatch is a useful boundary now that requests have two observable outcomes: `initialize` success and
+  correlated `-32601` errors for unknown methods.
+- Separate `SuccessResponse<T>` and `ErrorResponse` types prevent constructing a response with both `result` and `error`
+  or with neither.
+- `serde_json::from_value::<InitializeParams>` consumes a generic JSON value and applies the required/optional rules
+  encoded by the target Serde type.
+- `Option<Implementation>` accepts omitted or null `clientInfo`; when the object is present, plain `String` fields make
+  `name` and `version` required while `Option<String>` keeps `title` optional.
+- Unknown fields are ignored by Serde by default, which preserves ACP extensibility while the local type grows
+  incrementally.
+- `cargo test` builds test artifacts but does not guarantee that `target/debug/hobgoblin` is current; run
+  `cargo build --locked` before launching the subprocess checker against that path.
 
 ### Source checkpoint
 
-- Task 3 remains in progress on branch `initialize-acp` at commit `acf6f92`, tracking `origin/initialize-acp`; the working tree was clean before this ledger entry.
-- `run_acp` delegates request handling to `dispatch`; initialize requests emit a typed success envelope, unknown methods emit correlated `-32601` errors, and malformed present `clientInfo` emits a correlated `-32602` error.
-- The latest commit adds `InitializeParams` and `Implementation` only for optional `clientInfo` validation; `protocolVersion` and `clientCapabilities` are not yet represented by the params type.
+- Task 3 remains in progress on branch `initialize-acp` at commit `acf6f92`, tracking `origin/initialize-acp`; the
+  working tree was clean before this ledger entry.
+- `run_acp` delegates request handling to `dispatch`; initialize requests emit a typed success envelope, unknown methods
+  emit correlated `-32601` errors, and malformed present `clientInfo` emits a correlated `-32602` error.
+- The latest commit adds `InitializeParams` and `Implementation` only for optional `clientInfo` validation;
+  `protocolVersion` and `clientCapabilities` are not yet represented by the params type.
 - Diagnostics were clean. `./premerge.sh` exited 0 with formatting, strict Clippy, and all 38 tests passing.
-- After `cargo build --locked`, the external handshake checker passed all 7 cases and wrote `/tmp/acp-initialize-review.json`.
-- Task 3 is not complete: all explicit acceptance commands have not yet been run and recorded against the final tree, and initialize parameter validation remains incomplete.
+- After `cargo build --locked`, the external handshake checker passed all 7 cases and wrote
+  `/tmp/acp-initialize-review.json`.
+- Task 3 is not complete: all explicit acceptance commands have not yet been run and recorded against the final tree,
+  and initialize parameter validation remains incomplete.
 
 ### Exact resume point
 
-1. In both error-response tests, change `"a error response must not contain an result"` to `"an error response must not contain a result"`; these assertion-message typos are the only review finding in commit `acf6f92`.
-2. Add one red wire-level test proving that an initialize request missing required `protocolVersion` receives correlated `-32602 Invalid params`; keep valid `clientCapabilities` and omit `clientInfo`, which is optional.
-3. Add `protocolVersion` to `InitializeParams` using the ACP schema's unsigned 16-bit range, then rerun the focused test and `./premerge.sh`.
-4. Decide separately how to represent object-shaped `clientCapabilities` and its schema default before adding that field.
-5. When parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary, rerun the checker, and add the structured validation record.
+1. In both error-response tests, change `"a error response must not contain an result"` to
+   `"an error response must not contain a result"`; these assertion-message typos are the only review finding in commit
+   `acf6f92`.
+2. Add one red wire-level test proving that an initialize request missing required `protocolVersion` receives correlated
+   `-32602 Invalid params`; keep valid `clientCapabilities` and omit `clientInfo`, which is optional.
+3. Add `protocolVersion` to `InitializeParams` using the ACP schema's unsigned 16-bit range, then rerun the focused test
+   and `./premerge.sh`.
+4. Decide separately how to represent object-shaped `clientCapabilities` and its schema default before adding that
+   field.
+5. When parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary,
+   rerun the checker, and add the structured validation record.
 
 ## Session checkpoint — 2026-10-08 (Task 3 protocol version validation)
 
@@ -272,89 +363,123 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 - A required, non-`Option` Serde field makes a missing JSON property a deserialization error.
 - `#[serde(rename_all = "camelCase")]` maps Rust's `protocol_version` field to JSON's `protocolVersion` property.
 - `u16` enforces the ACP protocol version field's unsigned 16-bit range during deserialization.
-- Invalid method parameters are represented by a correlated JSON-RPC `-32602` response; handling them successfully does not make `run_acp` return a Rust error.
+- Invalid method parameters are represented by a correlated JSON-RPC `-32602` response; handling them successfully does
+  not make `run_acp` return a Rust error.
 
 ### Source checkpoint
 
 - `InitializeParams` now requires `protocol_version: u16`.
-- A wire-level regression test proves that an initialize request missing `protocolVersion` receives correlated `-32602 Invalid params`.
+- A wire-level regression test proves that an initialize request missing `protocolVersion` receives correlated
+  `-32602 Invalid params`.
 - The two error-response assertion-message typos are corrected.
-- The focused protocol-version test passed 1 test, and `./premerge.sh` exited 0 with formatting, strict Clippy, and all 39 tests passing.
+- The focused protocol-version test passed 1 test, and `./premerge.sh` exited 0 with formatting, strict Clippy, and all
+  39 tests passing.
 - The complete Task 3 acceptance commands and external handshake checker have not been rerun against this working tree.
 
 ### Exact resume point
 
-1. Decide how to represent object-shaped `clientCapabilities` and its ACP schema default without tightening extension handling.
+1. Decide how to represent object-shaped `clientCapabilities` and its ACP schema default without tightening extension
+   handling.
 2. Add focused coverage for the chosen required/default behavior before adding the field to `InitializeParams`.
-3. After initialize parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the binary, rerun the checker, and add the structured validation record.
+3. After initialize parameter validation is complete, run every explicit command in `03-acp-initialize.md`, rebuild the
+   binary, rerun the checker, and add the structured validation record.
 
 ## Session checkpoint — 2026-10-09 (Task 3 complete)
 
 ### Current understanding
 
-- A field-level `#[serde(default)]` handles an omitted object property by calling that field type's `Default` implementation.
-- Deriving Rust's `Default` does not by itself tell Serde to default missing fields inside a present object; `#[serde(default)]` must also be applied at the appropriate nested deserialization boundary.
-- ACP's omitted `clientCapabilities` value defaults all known capabilities to disabled, while Serde's default unknown-field behavior preserves protocol extensibility.
-- `cargo test` and the stricter `./premerge.sh` are distinct gates because the latter also runs Clippy with warnings denied.
+- A field-level `#[serde(default)]` handles an omitted object property by calling that field type's `Default`
+  implementation.
+- Deriving Rust's `Default` does not by itself tell Serde to default missing fields inside a present object;
+  `#[serde(default)]` must also be applied at the appropriate nested deserialization boundary.
+- ACP's omitted `clientCapabilities` value defaults all known capabilities to disabled, while Serde's default
+  unknown-field behavior preserves protocol extensibility.
+- `cargo test` and the stricter `./premerge.sh` are distinct gates because the latter also runs Clippy with warnings
+  denied.
 
 ### Source checkpoint
 
-- Task 3 is complete on branch `initialize-acp` at commit `2978a97`; the working tree was clean before this ledger entry.
-- `InitializeParams` validates required `protocolVersion`, optional `clientInfo`, and defaulted object-shaped `clientCapabilities` with nested filesystem, authentication, and terminal defaults.
-- The missing-`protocolVersion` regression test remains alongside focused default and wire-level omission coverage for `clientCapabilities`.
+- Task 3 is complete on branch `initialize-acp` at commit `2978a97`; the working tree was clean before this ledger
+  entry.
+- `InitializeParams` validates required `protocolVersion`, optional `clientInfo`, and defaulted object-shaped
+  `clientCapabilities` with nested filesystem, authentication, and terminal defaults.
+- The missing-`protocolVersion` regression test remains alongside focused default and wire-level omission coverage for
+  `clientCapabilities`.
 - `./premerge.sh` exited 0 with all 41 tests passing.
-- Every explicit Task 3 local acceptance command exited 0, and the external checker passed all 7 cases with report `/tmp/acp-initialize-review.json`.
+- Every explicit Task 3 local acceptance command exited 0, and the external checker passed all 7 cases with report
+  `/tmp/acp-initialize-review.json`.
 
 ### Exact resume point
 
-1. Before starting Task 4 implementation, refine `04-reader-writer-tasks.md` against the retained Task 3 transport and tests, as required by the roadmap.
-2. Begin Task 4 by reviewing its goal and the current `run_acp`, frame-reader, and frame-writer boundaries; no Task 3 work remains unverified.
+1. Before starting Task 4 implementation, refine `04-reader-writer-tasks.md` against the retained Task 3 transport and
+   tests, as required by the roadmap.
+2. Begin Task 4 by reviewing its goal and the current `run_acp`, frame-reader, and frame-writer boundaries; no Task 3
+   work remains unverified.
 
 ## Session checkpoint — 2026-10-09 (Task 4 transport design)
 
 ### Current understanding
 
-- One ACP stdio connection can eventually contain multiple concurrent operations that produce outbound messages; those are multiple message producers, not multiple stdout writers.
-- A single writer task should exclusively own the output stream so async writes cannot interleave and corrupt newline-delimited JSON frames.
-- A Tokio `mpsc` channel transfers owned messages from one or more `Sender` values to one `Receiver`; after every sender is dropped and queued messages are drained, `recv()` returns `None` and gives the writer a natural shutdown signal.
-- For Task 4's sequential handling, the reader task should own the sender. Returning from the reader at EOF then drops the last sender, provided the coordinator does not retain another copy.
-- A JSON-RPC error response is successful protocol handling and belongs in `Ok(Some(value))`; Rust `Err` is reserved for failures that prevent normal handling.
+- One ACP stdio connection can eventually contain multiple concurrent operations that produce outbound messages; those
+  are multiple message producers, not multiple stdout writers.
+- A single writer task should exclusively own the output stream so async writes cannot interleave and corrupt
+  newline-delimited JSON frames.
+- A Tokio `mpsc` channel transfers owned messages from one or more `Sender` values to one `Receiver`; after every sender
+  is dropped and queued messages are drained, `recv()` returns `None` and gives the writer a natural shutdown signal.
+- For Task 4's sequential handling, the reader task should own the sender. Returning from the reader at EOF then drops
+  the last sender, provided the coordinator does not retain another copy.
+- A JSON-RPC error response is successful protocol handling and belongs in `Ok(Some(value))`; Rust `Err` is reserved for
+  failures that prevent normal handling.
 
 ### Working Task 4 decisions
 
-- The channel will carry complete `serde_json::Value` messages. This keeps Task 4 focused on task ownership, channels, and shutdown; a typed outgoing-message enum can be introduced later when real message categories justify it.
-- Dispatch remains responsible for constructing complete JSON-RPC messages, using typed response structures before conversion to `Value` where useful.
-- The writer remains structurally ignorant of message semantics and owns only compact serialization, newline framing, writing, flushing, and the output stream.
-- The first refactor target is for dispatch to return `Result<Option<Value>, Error>`: `Some` means an outbound message, `None` means valid handling with no response, and `Err` means an internal failure.
+- The channel will carry complete `serde_json::Value` messages. This keeps Task 4 focused on task ownership, channels,
+  and shutdown; a typed outgoing-message enum can be introduced later when real message categories justify it.
+- Dispatch remains responsible for constructing complete JSON-RPC messages, using typed response structures before
+  conversion to `Value` where useful.
+- The writer remains structurally ignorant of message semantics and owns only compact serialization, newline framing,
+  writing, flushing, and the output stream.
+- The first refactor target is for dispatch to return `Result<Option<Value>, Error>`: `Some` means an outbound message,
+  `None` means valid handling with no response, and `Err` means an internal failure.
 - These decisions are intentionally reversible if compiler feedback or later requirements expose a weakness.
 
 ### Source checkpoint
 
 - Task 4 implementation has not started; no Task 4 behavior has been validated.
-- The repository is on `master` at commit `3b25b16`; `.github/workflows/ci.yml` has an uncommitted restoration of the format-and-Clippy CI job.
-- The restored CI job mirrors the local formatting and strict Clippy checks. `./premerge.sh` passed all 41 tests, workflow diagnostics were clean, and local `actionlint` validation was unavailable because `actionlint` is not installed.
+- The repository is on `master` at commit `3b25b16`; `.github/workflows/ci.yml` has an uncommitted restoration of the
+  format-and-Clippy CI job.
+- The restored CI job mirrors the local formatting and strict Clippy checks. `./premerge.sh` passed all 41 tests,
+  workflow diagnostics were clean, and local `actionlint` validation was unavailable because `actionlint` is not
+  installed.
 
 ### Exact resume point
 
 1. Refine `04-reader-writer-tasks.md` with the decisions above before starting implementation.
-2. Change only the dispatch boundary first: make it return `Result<Option<Value>, _>`, while keeping `run_acp` sequential and calling the existing `write_frame` for `Some`.
-3. Run the existing focused tests, `./premerge.sh`, and the unchanged handshake checker before introducing a channel; do not combine the dispatch refactor with task spawning.
-4. After that behavior-preserving seam is green, decide the remaining Task 4 questions about Tokio features and writer-task error propagation just before they are needed.
+2. Change only the dispatch boundary first: make it return `Result<Option<Value>, _>`, while keeping `run_acp`
+   sequential and calling the existing `write_frame` for `Some`.
+3. Run the existing focused tests, `./premerge.sh`, and the unchanged handshake checker before introducing a channel; do
+   not combine the dispatch refactor with task spawning.
+4. After that behavior-preserving seam is green, decide the remaining Task 4 questions about Tokio features and
+   writer-task error propagation just before they are needed.
 
 ## Session checkpoint — 2026-10-09 (Task 4 dispatch boundary)
 
 ### Current understanding
 
-- Rust blocks return their final expression when it has no trailing semicolon; explicit `return` is reserved for leaving the function before that final expression.
+- Rust blocks return their final expression when it has no trailing semicolon; explicit `return` is reserved for leaving
+  the function before that final expression.
 - Dispatch can construct a protocol response without owning the output stream by returning `Result<Option<Value>, _>`.
-- `Some(value)` represents a complete outbound protocol message, while Rust `Err` remains reserved for failures that prevent normal handling.
-- Keeping `run_acp` sequential during this refactor isolated the ownership boundary change from the upcoming channel and task changes.
+- `Some(value)` represents a complete outbound protocol message, while Rust `Err` remains reserved for failures that
+  prevent normal handling.
+- Keeping `run_acp` sequential during this refactor isolated the ownership boundary change from the upcoming channel and
+  task changes.
 
 ### Source checkpoint
 
 - `dispatch` no longer accepts a writer and instead returns `Result<Option<Value>, _>`.
 - `run_acp` still handles requests sequentially and calls the existing `write_frame` for each returned response.
-- `./premerge.sh` passed all 41 tests, `cargo build --locked` exited 0, and the unchanged handshake checker exited 0 with report `/tmp/acp-task4-dispatch-refactor.json`.
+- `./premerge.sh` passed all 41 tests, `cargo build --locked` exited 0, and the unchanged handshake checker exited 0
+  with report `/tmp/acp-task4-dispatch-refactor.json`.
 - No channel or spawned-task code has been added yet.
 
 ### Exact resume point
@@ -368,49 +493,71 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- Cargo recalculates enabled crate features from the current manifests, while `--locked` prevents commands from changing the package versions and dependency graph recorded in `Cargo.lock`.
-- A bounded channel capacity of one follows the current sequential invariant: one complete response may wait while further production applies backpressure.
-- `mpsc::Sender::send` transfers ownership of a complete `Value`; `Receiver::recv` returns `None` only after every sender is dropped and all queued values are drained.
-- `tokio::try_join!` polls the reader and writer futures concurrently on the current task, allowing a response to be flushed while the reader still waits for input.
-- A helper should remain private unless callers outside its module need it; `run_acp` remains the public transport boundary.
+- Cargo recalculates enabled crate features from the current manifests, while `--locked` prevents commands from changing
+  the package versions and dependency graph recorded in `Cargo.lock`.
+- A bounded channel capacity of one follows the current sequential invariant: one complete response may wait while
+  further production applies backpressure.
+- `mpsc::Sender::send` transfers ownership of a complete `Value`; `Receiver::recv` returns `None` only after every
+  sender is dropped and all queued values are drained.
+- `tokio::try_join!` polls the reader and writer futures concurrently on the current task, allowing a response to be
+  flushed while the reader still waits for input.
+- A helper should remain private unless callers outside its module need it; `run_acp` remains the public transport
+  boundary.
 
 ### Source checkpoint
 
 - Tokio's `sync` feature is enabled in `Cargo.toml`; `Cargo.lock` did not change.
-- `read_frames` owns the sole bounded-channel sender, and `write_frames` owns the receiver plus the only output-stream reference.
+- `read_frames` owns the sole bounded-channel sender, and `write_frames` owns the receiver plus the only output-stream
+  reference.
 - `run_acp` uses `tokio::try_join!` to coordinate both loops without spawning tasks yet.
 - ACP-focused tests passed 26 of 26, `./premerge.sh` passed all 41 tests, and `cargo build --locked` exited 0.
-- The unchanged handshake checker exited 0, including `initialize_reply_arrives_before_eof`, with report `/tmp/acp-task4-channel.json`.
+- The unchanged handshake checker exited 0, including `initialize_reply_arrives_before_eof`, with report
+  `/tmp/acp-task4-channel.json`.
 
 ### Exact resume point
 
-1. Replace in-task concurrency with separately spawned reader and writer tasks, addressing the ownership and bounds required by `tokio::spawn` one compiler message at a time.
-2. Supervise them asymmetrically: reader completion lets the writer drain, while writer failure stops the reader; treat task panics as failures.
+1. Replace in-task concurrency with separately spawned reader and writer tasks, addressing the ownership and bounds
+   required by `tokio::spawn` one compiler message at a time.
+2. Supervise them asymmetrically: reader completion lets the writer drain, while writer failure stops the reader; treat
+   task panics as failures.
 3. Add the required in-memory duplex tests for a response before client EOF and for draining queued responses after EOF.
 4. Spawned-task behavior and the new duplex acceptance coverage remain unimplemented and unverified.
-5. After Task 4, add or schedule hardening for a writer that hangs rather than completing or returning an error; the timeout is deliberately deferred from the current acceptance scope.
+5. After Task 4, add or schedule hardening for a writer that hangs rather than completing or returning an error; the
+   timeout is deliberately deferred from the current acceptance scope.
 
 ## Session checkpoint — 2026-10-12 (Task 4 spawned transport tasks)
 
 ### Current understanding
 
-- `tokio::spawn` owns a future that must be `Send + 'static`; `'static` means the future contains no non-static borrows, not that its owned values live forever.
-- A `JoinHandle<Result<(), AcpError>>` yields `Result<Result<(), AcpError>, JoinError>`: the outer result reports cancellation or panic, while the inner result reports a normal task-level transport failure.
-- `tokio::select!` lets the coordinator observe whichever task completes first without consuming the other handle. Reader completion lets the writer drain; writer failure requires aborting and then awaiting the reader so its resources are dropped.
-- Channel closure is the writer's shutdown signal. With one sender, reader completion drops that sender; `recv()` returns `None` only after the queue is drained.
-- A duplex test must run the simulated client concurrently with `run_acp` to prove a response arrives while client input remains open. Tokio tasks provide concurrency without requiring parallel OS threads.
+- `tokio::spawn` owns a future that must be `Send + 'static`; `'static` means the future contains no non-static borrows,
+  not that its owned values live forever.
+- A `JoinHandle<Result<(), AcpError>>` yields `Result<Result<(), AcpError>, JoinError>`: the outer result reports
+  cancellation or panic, while the inner result reports a normal task-level transport failure.
+- `tokio::select!` lets the coordinator observe whichever task completes first without consuming the other handle.
+  Reader completion lets the writer drain; writer failure requires aborting and then awaiting the reader so its
+  resources are dropped.
+- Channel closure is the writer's shutdown signal. With one sender, reader completion drops that sender; `recv()`
+  returns `None` only after the queue is drained.
+- A duplex test must run the simulated client concurrently with `run_acp` to prove a response arrives while client input
+  remains open. Tokio tasks provide concurrency without requiring parallel OS threads.
 
 ### Source checkpoint
 
-- `run_acp` owns spawn-safe input and output streams, spawns separate reader and writer tasks, and supervises them asymmetrically with `tokio::select!`.
-- ACP task errors use `Box<dyn Error + Send + Sync>`; `main` explicitly weakens that error at the application boundary without imposing task-safe errors on the terminal frontend.
-- Existing ACP tests now transfer owned readers and writers into `run_acp` and verify behavior through observable transport output rather than inspecting moved streams.
-- `writer_can_flush_while_reader_remains_blocked` uses a split duplex stream to verify a correlated initialize response before the client sends EOF.
-- `./premerge.sh` passed formatting, strict Clippy, and all 42 tests. The handshake checker was not rerun in this session.
+- `run_acp` owns spawn-safe input and output streams, spawns separate reader and writer tasks, and supervises them
+  asymmetrically with `tokio::select!`.
+- ACP task errors use `Box<dyn Error + Send + Sync>`; `main` explicitly weakens that error at the application boundary
+  without imposing task-safe errors on the terminal frontend.
+- Existing ACP tests now transfer owned readers and writers into `run_acp` and verify behavior through observable
+  transport output rather than inspecting moved streams.
+- `writer_can_flush_while_reader_remains_blocked` uses a split duplex stream to verify a correlated initialize response
+  before the client sends EOF.
+- `./premerge.sh` passed formatting, strict Clippy, and all 42 tests. The handshake checker was not rerun in this
+  session.
 
 ### Exact resume point
 
-1. Add the remaining deterministic duplex acceptance test proving responses already queued when input reaches EOF are still flushed before shutdown.
+1. Add the remaining deterministic duplex acceptance test proving responses already queued when input reaches EOF are
+   still flushed before shutdown.
 2. Run `./premerge.sh`, `cargo build --locked`, and the unchanged handshake checker.
 3. If every acceptance case passes, mark Task 4 complete and add its structured validation record.
 4. Writer-hang timeout hardening remains deliberately deferred until after Task 4.
@@ -419,13 +566,17 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- Shutting down the client's duplex write half sends EOF to the agent reader without closing the client's read half, so the client can still receive responses while the transport drains.
-- The two duplex tests prove complementary behavior: output can arrive before EOF while the reader remains blocked, and output is not lost when EOF starts graceful shutdown.
-- Acceptance tests should assert observable protocol behavior and causal ordering rather than a particular Tokio polling order or use of OS threads.
+- Shutting down the client's duplex write half sends EOF to the agent reader without closing the client's read half, so
+  the client can still receive responses while the transport drains.
+- The two duplex tests prove complementary behavior: output can arrive before EOF while the reader remains blocked, and
+  output is not lost when EOF starts graceful shutdown.
+- Acceptance tests should assert observable protocol behavior and causal ordering rather than a particular Tokio polling
+  order or use of OS threads.
 
 ### Source checkpoint
 
-- `writer_drains_response_after_client_input_reaches_eof` writes an initialize request, half-closes client input, then verifies the correlated response and clean agent-task completion.
+- `writer_drains_response_after_client_input_reaches_eof` writes an initialize request, half-closes client input, then
+  verifies the correlated response and clean agent-task completion.
 - `./premerge.sh` passed formatting, strict Clippy, and all 43 tests; `cargo build --locked` exited 0.
 - The unchanged handshake checker passed all 7 cases with report `/tmp/acp-task4-spawned-tasks.json`.
 - Task 4 now satisfies every machine-verifiable acceptance requirement.
@@ -433,127 +584,179 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 ### Exact resume point
 
 1. Commit and push the final Task 4 drain-after-EOF test and completion ledger when requested.
-2. Before implementing Task 5, refine `05-session-new.md` against the completed Task 4 source and raise its first design decision just in time.
-3. Writer-hang timeout hardening remains deferred and should be scheduled separately rather than added to Task 5 implicitly.
+2. Before implementing Task 5, refine `05-session-new.md` against the completed Task 4 source and raise its first design
+   decision just in time.
+3. Writer-hang timeout hardening remains deferred and should be scheduled separately rather than added to Task 5
+   implicitly.
 
 ## Session checkpoint — 2026-10-13 (Task 5 started)
 
 ### Current understanding
 
-- `Arc` uses atomic reference-count operations for shared ownership; it does not use a mutex to protect its count, and `Arc<Mutex<T>>` gives the two layers separate responsibilities.
-- The selected state design is shared rather than actor-based: an outer `RwLock` protects registry lookup and insertion, while each `Session` has its own `Mutex` so unrelated sessions can eventually run concurrently.
-- `read_frames` owns `ConnectionState` and lends it to `dispatch` through `&mut`; future spawned request tasks will clone the registry's `Arc`, not the registry contents.
-- ACP supplies `cwd` and `mcpServers` in `session/new`. The chosen policy stores an absolute `cwd` as immutable session context, requires `mcpServers` to be an array, and defers filesystem existence checks and MCP connections.
+- `Arc` uses atomic reference-count operations for shared ownership; it does not use a mutex to protect its count, and
+  `Arc<Mutex<T>>` gives the two layers separate responsibilities.
+- The selected state design is shared rather than actor-based: an outer `RwLock` protects registry lookup and insertion,
+  while each `Session` has its own `Mutex` so unrelated sessions can eventually run concurrently.
+- `read_frames` owns `ConnectionState` and lends it to `dispatch` through `&mut`; future spawned request tasks will
+  clone the registry's `Arc`, not the registry contents.
+- ACP supplies `cwd` and `mcpServers` in `session/new`. The chosen policy stores an absolute `cwd` as immutable session
+  context, requires `mcpServers` to be an array, and defers filesystem existence checks and MCP connections.
 
 ### Source checkpoint
 
 - Branch `milestone5` was clean and matched `origin/milestone5` before this ledger checkpoint was added.
-- The canonical `uuid` crate is enabled with `v7` and `serde`; `SessionId` is a transparent UUID newtype generated by `Uuid::now_v7()`.
-- `ConnectionState` records successful initialization and owns a shared `SessionRegistry` whose values are independently locked session handles.
-- The general `Session` now owns a private `PathBuf` working directory, exposes immutable path access, and supports empty-session construction; terminal frontends explicitly use the process working directory.
-- `NewSessionParams` models `cwd` and the required `mcpServers` array. Successful `session/new` parsing and insertion are not implemented yet.
-- `session/new` before initialization returns error `-32001`; `session_creation_before_initialization_is_rejected` verifies the correlated error and unchanged registry.
+- The canonical `uuid` crate is enabled with `v7` and `serde`; `SessionId` is a transparent UUID newtype generated by
+  `Uuid::now_v7()`.
+- `ConnectionState` records successful initialization and owns a shared `SessionRegistry` whose values are independently
+  locked session handles.
+- The general `Session` now owns a private `PathBuf` working directory, exposes immutable path access, and supports
+  empty-session construction; terminal frontends explicitly use the process working directory.
+- `NewSessionParams` models `cwd` and the required `mcpServers` array. Successful `session/new` parsing and insertion
+  are not implemented yet.
+- `session/new` before initialization returns error `-32001`; `session_creation_before_initialization_is_rejected`
+  verifies the correlated error and unchanged registry.
 
 ### Exact resume point
 
-1. Run the full `cargo test --locked` suite after the focused pre-initialization test; this latest full-suite result is unverified.
-2. Implement the successful `session/new` branch: deserialize `NewSessionParams`, reject a non-absolute `cwd`, create `Session::empty`, generate a UUID v7, insert `Arc<Mutex<Session>>` under a short registry write lock, and return the same ID as `sessionId`.
-3. Add focused coverage for malformed parameters, relative `cwd`, two distinct IDs, and retained per-session working directories; then extend the subprocess checker.
-4. Decide unknown-session lookup behavior only when the first lookup operation is introduced; do not pre-solve Task 6 prompt handling.
+1. Run the full `cargo test --locked` suite after the focused pre-initialization test; this latest full-suite result is
+   unverified.
+2. Implement the successful `session/new` branch: deserialize `NewSessionParams`, reject a non-absolute `cwd`, create
+   `Session::empty`, generate a UUID v7, insert `Arc<Mutex<Session>>` under a short registry write lock, and return the
+   same ID as `sessionId`.
+3. Add focused coverage for malformed parameters, relative `cwd`, two distinct IDs, and retained per-session working
+   directories; then extend the subprocess checker.
+4. Decide unknown-session lookup behavior only when the first lookup operation is introduced; do not pre-solve Task 6
+   prompt handling.
 
 ## Session checkpoint — 2026-10-13 (Task 5 successful session creation)
 
 ### Current understanding
 
-- `Arc<T>` exposes `T`'s methods through `Deref`, so calling `write()` on `Arc<RwLock<T>>` resolves to `RwLock::write`; awaiting it suspends the task rather than blocking the runtime thread when the lock is unavailable.
-- A registry lookup returns a borrowed `&Arc<Mutex<Session>>`. Cloning that value clones only the `Arc` handle, not the session, allowing the registry guard to be dropped before awaiting the per-session mutex.
+- `Arc<T>` exposes `T`'s methods through `Deref`, so calling `write()` on `Arc<RwLock<T>>` resolves to `RwLock::write`;
+  awaiting it suspends the task rather than blocking the runtime thread when the lock is unavailable.
+- A registry lookup returns a borrowed `&Arc<Mutex<Session>>`. Cloning that value clones only the `Arc` handle, not the
+  session, allowing the registry guard to be dropped before awaiting the per-session mutex.
 - Struct destructuring can move the needed `cwd` field into a local binding while explicitly ignoring `mcp_servers`.
-- Named `ErrorResponse` constructors keep JSON-RPC meanings visible at call sites, while one general constructor centralizes the response shape; protocol error numbers now have named constants.
+- Named `ErrorResponse` constructors keep JSON-RPC meanings visible at call sites, while one general constructor
+  centralizes the response shape; protocol error numbers now have named constants.
 
 ### Source checkpoint
 
-- Branch `milestone5` contains commit `350a71f` (`Implement ACP session creation`) and has additional uncommitted test and ledger changes at this checkpoint.
-- Initialized `session/new` validates parameters and an absolute `cwd`, inserts an independently locked empty session under a UUID v7 ID, and returns that same ID.
-- `session_creation_returns_id_and_retains_working_directory` deserializes the returned ID, uses it to find the stored handle, and verifies the retained `/tmp` working directory.
-- The focused success-path test passed. The compiler still reports that `NewSessionParams::mcp_servers` is never read even though it is required during deserialization and deliberately ignored.
+- Branch `milestone5` contains commit `350a71f` (`Implement ACP session creation`) and has additional uncommitted test
+  and ledger changes at this checkpoint.
+- Initialized `session/new` validates parameters and an absolute `cwd`, inserts an independently locked empty session
+  under a UUID v7 ID, and returns that same ID.
+- `session_creation_returns_id_and_retains_working_directory` deserializes the returned ID, uses it to find the stored
+  handle, and verifies the retained `/tmp` working directory.
+- The focused success-path test passed. The compiler still reports that `NewSessionParams::mcp_servers` is never read
+  even though it is required during deserialization and deliberately ignored.
 
 ### Exact resume point
 
-1. Add focused tests for malformed `session/new` parameters and a relative `cwd`; each must return `-32602` without changing the registry.
+1. Add focused tests for malformed `session/new` parameters and a relative `cwd`; each must return `-32602` without
+   changing the registry.
 2. Add coverage proving that two successful creations return distinct IDs and retain independent sessions.
-3. Decide how to represent the intentionally accepted-but-unused `mcpServers` field without leaving a warning, then extend the subprocess checker.
+3. Decide how to represent the intentionally accepted-but-unused `mcpServers` field without leaving a warning, then
+   extend the subprocess checker.
 4. Run the complete Task 5 validation set before marking the task complete.
 
 ## Session checkpoint — 2026-10-19 (Task 5 complete)
 
 ### Current understanding
 
-- Shared registry access and per-session access have separate locks; clone a session handle under the short registry lock, release that guard, and only then await the session lock.
-- Default to dropping lock guards before `.await`; holding a Tokio mutex across an await is supported but must protect state that genuinely requires exclusivity for the entire asynchronous operation.
-- Pydantic models validate protocol shape and strict wire types, while concrete test cases express behavioral sequences and `AgentProcess` owns subprocess transport concerns.
-- The repository premerge path now runs the ACP test suite's Ruff lint and formatting checks before Rust Clippy and tests.
+- Shared registry access and per-session access have separate locks; clone a session handle under the short registry
+  lock, release that guard, and only then await the session lock.
+- Default to dropping lock guards before `.await`; holding a Tokio mutex across an await is supported but must protect
+  state that genuinely requires exclusivity for the entire asynchronous operation.
+- Pydantic models validate protocol shape and strict wire types, while concrete test cases express behavioral sequences
+  and `AgentProcess` owns subprocess transport concerns.
+- The repository premerge path now runs the ACP test suite's Ruff lint and formatting checks before Rust Clippy and
+  tests.
 
 ### Source checkpoint
 
-- Branch `milestone5` at clean commit `17278de` contains the completed Task 5 implementation, unit coverage, black-box ACP test suite, and current documentation.
-- `session/new` requires initialization, validates its parameters and absolute working directory, returns a UUID v7 ID, and stores independently locked session state in the connection registry.
-- The ACP test suite starts the real binary without model keys, initializes one connection, creates two sessions, and verifies correlated, distinct UUID v7 IDs.
+- Branch `milestone5` at clean commit `17278de` contains the completed Task 5 implementation, unit coverage, black-box
+  ACP test suite, and current documentation.
+- `session/new` requires initialization, validates its parameters and absolute working directory, returns a UUID v7 ID,
+  and stores independently locked session state in the connection registry.
+- The ACP test suite starts the real binary without model keys, initializes one connection, creates two sessions, and
+  verifies correlated, distinct UUID v7 IDs.
 - Unknown-session behavior remains deliberately deferred until Task 6 introduces the first session lookup operation.
 
 ### Exact resume point
 
-1. Start Task 6 from [`06-session-prompt.md`](06-session-prompt.md) and inspect the current dispatch, session registry, agent turn, and model trait boundaries.
+1. Start Task 6 from [`06-session-prompt.md`](06-session-prompt.md) and inspect the current dispatch, session registry,
+   agent turn, and model trait boundaries.
 2. Decide the unknown-session response when implementing the first `session/prompt` registry lookup.
-3. Introduce prompt handling incrementally; address conversation exclusivity and `Send` compiler errors only when the first spawned prompt task requires those decisions.
-4. Preserve the completed Task 5 acceptance suite while adding scripted-model duplex coverage for prompt update-before-response ordering.
+3. Introduce prompt handling incrementally; address conversation exclusivity and `Send` compiler errors only when the
+   first spawned prompt task requires those decisions.
+4. Preserve the completed Task 5 acceptance suite while adding scripted-model duplex coverage for prompt
+   update-before-response ordering.
 
 ## Session checkpoint — 2026-10-20 (Task 6 prompt parsing)
 
 ### Current understanding
 
-- A boundary is where responsibilities, ownership, data shape, or error contracts change; the relevant M6 boundaries are ACP framing, dispatch, the session registry, the shared agent core, and the model trait.
-- `session/prompt` carries one user message as an ordered array of typed content blocks. Serde's `type` tag selects a Rust enum variant.
-- The current core accepts one string, so the ACP frontend owns the temporary flattening policy. Owned block strings can move into the joined prompt without cloning.
-- `map_err`, `ok_or`, and `?` normalize deserialization and unsupported-content failures into the parser's single invalid-parameters outcome.
+- A boundary is where responsibilities, ownership, data shape, or error contracts change; the relevant M6 boundaries are
+  ACP framing, dispatch, the session registry, the shared agent core, and the model trait.
+- `session/prompt` carries one user message as an ordered array of typed content blocks. Serde's `type` tag selects a
+  Rust enum variant.
+- The current core accepts one string, so the ACP frontend owns the temporary flattening policy. Owned block strings can
+  move into the joined prompt without cloning.
+- `map_err`, `ok_or`, and `?` normalize deserialization and unsupported-content failures into the parser's single
+  invalid-parameters outcome.
 
 ### Working Task 6 decisions
 
-- Return ACP `-32002` (`Resource not found`) for a validly shaped session ID that is absent from the connection registry.
-- Accept only text blocks in M6 and join multiple blocks with one newline. Defer `resource_link` and multimodal input to a later compatibility pass.
+- Return ACP `-32002` (`Resource not found`) for a validly shaped session ID that is absent from the connection
+  registry.
+- Accept only text blocks in M6 and join multiple blocks with one newline. Defer `resource_link` and multimodal input to
+  a later compatibility pass.
 - Reject an empty prompt array, but allow an array containing an empty text block.
-- Use concise contract-first implementation guidance: target, inputs, output, expected behavior, and small examples; provide exact code only on request or when blocked.
+- Use concise contract-first implementation guidance: target, inputs, output, expected behavior, and small examples;
+  provide exact code only on request or when blocked.
 
 ### Source checkpoint
 
 - Branch `master` is clean at implementation commit `5ae5305` before this documentation wrap-up.
-- `src/acp.rs` defines typed prompt parameters, a tagged text/unsupported content enum, newline joining, invalid-input normalization, and the selected resource-not-found error vocabulary.
-- Six focused tests cover joining, unsupported poisoning, valid wire parsing, unsupported wire content, malformed parameters, and an empty prompt array.
+- `src/acp.rs` defines typed prompt parameters, a tagged text/unsupported content enum, newline joining, invalid-input
+  normalization, and the selected resource-not-found error vocabulary.
+- Six focused tests cover joining, unsupported poisoning, valid wire parsing, unsupported wire content, malformed
+  parameters, and an empty prompt array.
 - `cargo fmt --check` and all 54 Rust tests passed before the implementation commit was pushed to `origin/master`.
 
 ### Exact resume point
 
-1. Add an async session lookup helper taking `&SessionRegistry` and `&SessionId` and returning a cloned `Option<SessionHandle>` without retaining the registry read guard.
+1. Add an async session lookup helper taking `&SessionRegistry` and `&SessionId` and returning a cloned
+   `Option<SessionHandle>` without retaining the registry read guard.
 2. Add focused existing-session and unknown-session tests for that helper.
-3. Use the prompt parser and lookup in the first `session/prompt` dispatch path: malformed input becomes `-32602`, and an unknown session becomes `-32002`.
-4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into a spawned task.
+3. Use the prompt parser and lookup in the first `session/prompt` dispatch path: malformed input becomes `-32602`, and
+   an unknown session becomes `-32002`.
+4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into
+   a spawned task.
 
 ### Unverified or deferred
 
-- Prompt parsing is not connected to dispatch, no model turn runs over ACP, and the resource-not-found helper is not yet used; its dead-code warnings are expected.
+- Prompt parsing is not connected to dispatch, no model turn runs over ACP, and the resource-not-found helper is not yet
+  used; its dead-code warnings are expected.
 - The black-box ACP suite, Ruff checks, Clippy, and a Zed manual demo were not run for this partial Task 6 checkpoint.
-- `resource_link`, image, audio, and embedded-resource prompt content remain unsupported and must be revisited before claiming broad ACP v1 compatibility.
+- `resource_link`, image, audio, and embedded-resource prompt content remain unsupported and must be revisited before
+  claiming broad ACP v1 compatibility.
 
 ## Session checkpoint — 2026-10-20 (Task 6 session lookup)
 
 ### Current understanding
 
 - `Arc::clone` adds shared ownership of the same allocation; it does not clone the inner `Mutex<Session>` or `Session`.
-- A session lookup can clone the registry's `Arc` while holding the `RwLock` read guard, then return that independent handle so the guard is dropped before later asynchronous work.
-- `Arc::ptr_eq` proves that the returned and registered handles point to the same allocation, which is stronger than comparing one field of the session.
+- A session lookup can clone the registry's `Arc` while holding the `RwLock` read guard, then return that independent
+  handle so the guard is dropped before later asynchronous work.
+- `Arc::ptr_eq` proves that the returned and registered handles point to the same allocation, which is stronger than
+  comparing one field of the session.
 
 ### Source checkpoint
 
-- Branch `master` started this checkpoint at `1e653ac` with only `src/acp.rs` and this ledger changed for the checkpoint.
+- Branch `master` started this checkpoint at `1e653ac` with only `src/acp.rs` and this ledger changed for the
+  checkpoint.
 - `src/acp.rs` has an async `get_session` helper plus focused existing-session and unknown-session tests.
 - The helper has a documented temporary dead-code allowance until the next dispatch step uses it.
 
@@ -562,21 +765,27 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 1. Add the first `session/prompt` dispatch branch using `parse_prompt_params` and `get_session`.
 2. Return `-32602` for malformed prompt parameters and `-32002` for a valid but unknown session ID.
 3. Remove the temporary dead-code allowance from `get_session` once dispatch calls it.
-4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into a spawned task.
+4. Do not design conversation exclusivity or solve `Send` errors until the first successful prompt is ready to move into
+   a spawned task.
 
 ### Unverified or deferred
 
 - Prompt lookup is not connected to dispatch and no ACP model turn runs yet.
-- The full Rust test suite, black-box ACP suite, Ruff checks, and Zed manual demo were not run for this small partial checkpoint.
-- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to later Task 6 increments.
+- The full Rust test suite, black-box ACP suite, Ruff checks, and Zed manual demo were not run for this small partial
+  checkpoint.
+- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to
+  later Task 6 increments.
 
 ## Session checkpoint — 2026-10-21 (Task 6 dispatch errors)
 
 ### Current understanding
 
-- Serde validates the prompt's wire shape, while `parse_prompt_params` also enforces frontend policy such as rejecting an empty prompt array and unsupported content blocks.
-- Prompt dispatch validates parameters before looking up the session, so malformed input returns `-32602` and a valid request naming an unknown session returns `-32002`.
-- A Rust `match` is an expression; each arm can produce the branch's `Result`, avoiding a separate mutable result or duplicated serialization path.
+- Serde validates the prompt's wire shape, while `parse_prompt_params` also enforces frontend policy such as rejecting
+  an empty prompt array and unsupported content blocks.
+- Prompt dispatch validates parameters before looking up the session, so malformed input returns `-32602` and a valid
+  request naming an unknown session returns `-32002`.
+- A Rust `match` is an expression; each arm can produce the branch's `Result`, avoiding a separate mutable result or
+  duplicated serialization path.
 
 ### Source checkpoint
 
@@ -588,7 +797,8 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 ### Exact resume point
 
 1. Continue from the existing-session arm of the `session/prompt` dispatch branch.
-2. Decide how a prompt turn gets exclusive access to its session and what a second prompt for the same busy session should do.
+2. Decide how a prompt turn gets exclusive access to its session and what a second prompt for the same busy session
+   should do.
 3. Connect the first successful model turn, then move it into a spawned task so the ACP reader remains responsive.
 4. Address model configuration and `Send` compiler errors only as that successful path requires them.
 
@@ -596,168 +806,242 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 - No ACP model turn, `session/update`, final `stopReason`, or spawned prompt task exists yet.
 - The black-box ACP behavior suite and a Zed manual demo were not run for this partial checkpoint.
-- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to the next Task 6 increments.
+- Conversation exclusivity, model configuration, spawned prompt handling, and `Send` constraints remain deferred to the
+  next Task 6 increments.
 
 ## Session checkpoint — 2026-10-22 (Task 6 model injection started)
 
 ### Current understanding
 
-- Same-session prompts will wait in Tokio mutex FIFO order, while prompts for different sessions may run concurrently. The registry lock must be released before waiting on the per-session mutex.
-- `Arc<Mutex<Session>>` represents genuine shared ownership across the registry and independently living prompt tasks; cloning the `Arc` does not clone the session.
-- Provider policy belongs behind the existing `Model` trait rather than in the ACP transport. A Tokio `OnceCell` can lazily construct one reusable OpenRouter client and coordinate concurrent first access.
-- ACP credentials will come only from the inherited process environment or a `.env` file for M6. Missing credentials must eventually become an actionable JSON-RPC prompt error, not terminate the process. Keychain-backed login is deferred.
-- A generic model path uses static dispatch. Because the reader future is spawned, its owned model requires `Send + Sync + 'static`: `Send` permits moving ownership between worker threads, `Sync` permits `&M` to cross thread boundaries, and `'static` forbids short-lived borrowed data.
+- Same-session prompts will wait in Tokio mutex FIFO order, while prompts for different sessions may run concurrently.
+  The registry lock must be released before waiting on the per-session mutex.
+- `Arc<Mutex<Session>>` represents genuine shared ownership across the registry and independently living prompt tasks;
+  cloning the `Arc` does not clone the session.
+- Provider policy belongs behind the existing `Model` trait rather than in the ACP transport. A Tokio `OnceCell` can
+  lazily construct one reusable OpenRouter client and coordinate concurrent first access.
+- ACP credentials will come only from the inherited process environment or a `.env` file for M6. Missing credentials
+  must eventually become an actionable JSON-RPC prompt error, not terminate the process. Keychain-backed login is
+  deferred.
+- A generic model path uses static dispatch. Because the reader future is spawned, its owned model requires
+  `Send + Sync + 'static`: `Send` permits moving ownership between worker threads, `Sync` permits `&M` to cross thread
+  boundaries, and `'static` forbids short-lived borrowed data.
 
 ### Working Task 6 decisions
 
 - A second prompt for a busy session waits for the session mutex rather than receiving a busy error.
 - Load `.env` for every frontend, but do not inspect or require provider credentials during ACP startup.
-- Keep `run_acp(reader, writer)` as the production wrapper and use an internal generic `run_acp_with_model(reader, writer, model)` seam for scripted-model tests.
-- Retry lazy provider initialization after failures by leaving the `OnceCell` empty; cache only a successfully constructed client.
+- Keep `run_acp(reader, writer)` as the production wrapper and use an internal generic
+  `run_acp_with_model(reader, writer, model)` seam for scripted-model tests.
+- Retry lazy provider initialization after failures by leaving the `OnceCell` empty; cache only a successfully
+  constructed client.
 
 ### Source checkpoint
 
-- Branch `master` started this checkpoint at `4024962` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and this ledger.
-- `src/main.rs` now loads `.env` before choosing ACP or terminal mode, while eager terminal provider validation remains after the ACP early return.
-- `src/agent.rs` defines crate-visible `OpenRouterModel`, backed by `OnceCell<Client<OpenAIConfig>>`; its first `complete` call reads OpenRouter configuration, returns an actionable `std::io::Error` for a missing key, and caches only successful client construction.
-- `src/acp.rs` has a production `run_acp` wrapper, generic `run_acp_with_model`, and generic model propagation through `read_frames` and `dispatch`. The existing-session prompt arm acquires its per-session mutex and still ends at `todo!()`.
-- The ACP test module defines an inert `Model` that panics if called, and all eight direct dispatch tests pass it through the new generic dependency.
-- `cargo fmt --check`, `cargo test --locked --no-run`, and all 58 Rust tests pass with only the expected unused-`prompt` warning.
+- Branch `master` started this checkpoint at `4024962` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and
+  this ledger.
+- `src/main.rs` now loads `.env` before choosing ACP or terminal mode, while eager terminal provider validation remains
+  after the ACP early return.
+- `src/agent.rs` defines crate-visible `OpenRouterModel`, backed by `OnceCell<Client<OpenAIConfig>>`; its first
+  `complete` call reads OpenRouter configuration, returns an actionable `std::io::Error` for a missing key, and caches
+  only successful client construction.
+- `src/acp.rs` has a production `run_acp` wrapper, generic `run_acp_with_model`, and generic model propagation through
+  `read_frames` and `dispatch`. The existing-session prompt arm acquires its per-session mutex and still ends at
+  `todo!()`.
+- The ACP test module defines an inert `Model` that panics if called, and all eight direct dispatch tests pass it
+  through the new generic dependency.
+- `cargo fmt --check`, `cargo test --locked --no-run`, and all 58 Rust tests pass with only the expected unused-`prompt`
+  warning.
 
 ### Exact resume point
 
-1. Connect the existing-session branch to the first synchronous `agent::turn` using the injected model and parsed prompt.
+1. Connect the existing-session branch to the first synchronous `agent::turn` using the injected model and parsed
+   prompt.
 2. Convert model and configuration failures into correlated JSON-RPC errors rather than terminating the reader.
 3. Add focused scripted-model coverage for the successful synchronous prompt path.
-4. Only after that path works should prompt execution move into its own spawned task so the ACP reader remains responsive.
+4. Only after that path works should prompt execution move into its own spawned task so the ACP reader remains
+   responsive.
 
 ### Unverified or deferred
 
 - The black-box ACP suite, Ruff checks, Clippy, and Zed demo were not run for this partial checkpoint.
 - No successful ACP model turn, `session/update`, final `stopReason`, or spawned prompt task exists yet.
 - The missing-key error is produced by the lazy model but is not yet converted into a JSON-RPC response.
-- Same-session FIFO waiting is selected and the mutex is acquired, but no acceptance test yet demonstrates queued turn ordering.
+- Same-session FIFO waiting is selected and the mutex is acquired, but no acceptance test yet demonstrates queued turn
+  ordering.
 - Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
 
 ## Session checkpoint — 2026-10-22 (Task 6 synchronous prompt turn)
 
 ### Current understanding
 
-- A Tokio mutex guard implements `DerefMut`, so a mutable borrow of the guard can satisfy `agent::turn`'s `&mut Session` input while keeping the session locked for the whole awaited turn.
-- Native `async fn` in a trait does not by itself promise a `Send` future. Expressing `Model::complete` as return-position `impl Future<Output = ...> + Send` makes that contract explicit and lets the compiler verify each existing async implementation.
-- Provider response vocabulary such as `choices` belongs behind the agent-core boundary. `agent::turn` extracts the assistant message into session history; the ACP prompt response exposes only ACP fields such as `stopReason`.
-- Model failures must be converted into correlated JSON-RPC responses inside dispatch rather than escape as transport errors and terminate the reader.
+- A Tokio mutex guard implements `DerefMut`, so a mutable borrow of the guard can satisfy `agent::turn`'s `&mut Session`
+  input while keeping the session locked for the whole awaited turn.
+- Native `async fn` in a trait does not by itself promise a `Send` future. Expressing `Model::complete` as
+  return-position `impl Future<Output = ...> + Send` makes that contract explicit and lets the compiler verify each
+  existing async implementation.
+- Provider response vocabulary such as `choices` belongs behind the agent-core boundary. `agent::turn` extracts the
+  assistant message into session history; the ACP prompt response exposes only ACP fields such as `stopReason`.
+- Model failures must be converted into correlated JSON-RPC responses inside dispatch rather than escape as transport
+  errors and terminate the reader.
 
 ### Source checkpoint
 
 - Branch `master` started this checkpoint at `8812ff4` with changes in `src/acp.rs`, `src/agent.rs`, and this ledger.
-- `Model::complete` now guarantees that its returned future is `Send`; all existing model implementations satisfy that stronger contract.
-- The existing-session prompt branch synchronously runs `agent::turn` while holding the per-session mutex, returns `stopReason: "end_turn"` on success, and maps model failures to JSON-RPC `-32603` responses.
-- A focused scripted-model test proves that the ACP prompt and extracted assistant response are retained in the same session conversation while provider-specific `choices` data does not leak into the ACP response.
+- `Model::complete` now guarantees that its returned future is `Send`; all existing model implementations satisfy that
+  stronger contract.
+- The existing-session prompt branch synchronously runs `agent::turn` while holding the per-session mutex, returns
+  `stopReason: "end_turn"` on success, and maps model failures to JSON-RPC `-32603` responses.
+- A focused scripted-model test proves that the ACP prompt and extracted assistant response are retained in the same
+  session conversation while provider-specific `choices` data does not leak into the ACP response.
 - `./premerge.sh` passes, including Rust formatting, Ruff checks, Clippy with warnings denied, and all 59 Rust tests.
 
 ### Exact resume point
 
-1. Add focused coverage proving a failing model produces a correlated `-32603` JSON-RPC response without returning an ACP transport error.
-2. Decide how prompt dispatch will emit both an `agent_message_chunk` update and the final correlated response through the writer channel.
+1. Add focused coverage proving a failing model produces a correlated `-32603` JSON-RPC response without returning an
+   ACP transport error.
+2. Decide how prompt dispatch will emit both an `agent_message_chunk` update and the final correlated response through
+   the writer channel.
 3. Use the currently bound answer to send the update before the final `stopReason: "end_turn"` response.
-4. Only after update-before-response works synchronously should prompt execution move into its own spawned task so the reader remains responsive.
+4. Only after update-before-response works synchronously should prompt execution move into its own spawned task so the
+   reader remains responsive.
 
 ### Unverified or deferred
 
 - The model-failure response branch does not yet have focused coverage.
-- No `session/update`, spawned prompt task, reader-responsiveness test, same-session FIFO acceptance test, or Zed demo exists yet.
-- The black-box ACP suite has not yet exercised `session/prompt`; the current pre-merge ACP checks cover Python formatting and linting only.
+- No `session/update`, spawned prompt task, reader-responsiveness test, same-session FIFO acceptance test, or Zed demo
+  exists yet.
+- The black-box ACP suite has not yet exercised `session/prompt`; the current pre-merge ACP checks cover Python
+  formatting and linting only.
 - Keychain-backed authentication, Zed-native login, and provider selection beyond OpenRouter remain deferred.
 
 ## Session checkpoint — 2026-10-22 (Task 6 session wrap-up)
 
 ### Current understanding
 
-- The remaining blocker for a basic Zed demo is not model execution: the model answer is currently bound as `_answer` and discarded, so Zed receives `end_turn` without an `agent_message_chunk` to render.
-- A spawned prompt future must own `'static` values rather than borrow locals from `read_frames`. The task will need an owned session handle, prompt, session ID, request ID, cloned writer sender, and shared model handle.
-- `Arc<M>` is the intended shared model ownership: `run_acp_with_model` wraps the model once, and prompt tasks clone the `Arc` without cloning the model or its lazy `OnceCell` client.
-- To keep the reader responsive, the spawned prompt task must send both the update and final response itself; returning the final response from a waited-on dispatch path would still block the reader.
-- The synchronous minimum ACP sequence is one `session/update` notification containing `agent_message_chunk`, followed by the correlated `session/prompt` response containing `stopReason: "end_turn"`.
+- The remaining blocker for a basic Zed demo is not model execution: the model answer is currently bound as `_answer`
+  and discarded, so Zed receives `end_turn` without an `agent_message_chunk` to render.
+- A spawned prompt future must own `'static` values rather than borrow locals from `read_frames`. The task will need an
+  owned session handle, prompt, session ID, request ID, cloned writer sender, and shared model handle.
+- `Arc<M>` is the intended shared model ownership: `run_acp_with_model` wraps the model once, and prompt tasks clone the
+  `Arc` without cloning the model or its lazy `OnceCell` client.
+- To keep the reader responsive, the spawned prompt task must send both the update and final response itself; returning
+  the final response from a waited-on dispatch path would still block the reader.
+- The synchronous minimum ACP sequence is one `session/update` notification containing `agent_message_chunk`, followed
+  by the correlated `session/prompt` response containing `stopReason: "end_turn"`.
 
 ### Source checkpoint
 
-- Commit `fa9d8d9` (`Run synchronous ACP prompt turns`) is pushed to `origin/master`; the source tree was clean before this ledger wrap-up.
-- The synchronous prompt path and its scripted-model conversation test are complete, and `./premerge.sh` passes all 59 Rust tests plus formatting, Ruff, and Clippy checks.
+- Commit `fa9d8d9` (`Run synchronous ACP prompt turns`) is pushed to `origin/master`; the source tree was clean before
+  this ledger wrap-up.
+- The synchronous prompt path and its scripted-model conversation test are complete, and `./premerge.sh` passes all 59
+  Rust tests plus formatting, Ruff, and Clippy checks.
 - No source code changed after the pushed checkpoint; only the next ownership and task shape were selected.
 
 ### Exact resume point
 
-1. Change model propagation from owned `M` to shared `Arc<M>` across `run_acp_with_model`, `read_frames`, and `dispatch` while leaving prompt execution synchronous.
+1. Change model propagation from owned `M` to shared `Arc<M>` across `run_acp_with_model`, `read_frames`, and `dispatch`
+   while leaving prompt execution synchronous.
 2. Run `cargo check --locked` and `cargo test --locked` before introducing a nested task.
-3. Give prompt handling a cloned writer sender, move its owned values into `tokio::spawn`, and have that task send `agent_message_chunk` before the final `end_turn` response.
-4. Add a duplex scripted-model test proving update-before-response ordering, then build and configure the custom agent in Zed.
+3. Give prompt handling a cloned writer sender, move its owned values into `tokio::spawn`, and have that task send
+   `agent_message_chunk` before the final `end_turn` response.
+4. Add a duplex scripted-model test proving update-before-response ordering, then build and configure the custom agent
+   in Zed.
 
 ### Unverified or deferred
 
 - The existing model-failure response branch still lacks focused coverage.
 - The `Arc<M>` propagation and nested prompt task have not been implemented or compiler-checked.
-- No `session/update`, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo exists yet.
+- No `session/update`, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo
+  exists yet.
 - Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
 
 ## Session checkpoint — 2026-10-23 (Task 6 synchronous update)
 
 ### Current understanding
 
-- Borrowing an `Arc<T>` or calling `Arc::as_ref` does not change its strong count; only cloning or dropping an owning `Arc` changes that count.
-- Tokio tasks require an owned `Send + 'static` future because they may move between runtime worker threads. `Sync` is separately required when shared references may be used across threads.
-- The ACP layer owns the model-sharing policy. `agent::turn` continues to accept `&M`; it does not need to know that ACP stores the model in an `Arc<M>`.
-- A JSON-RPC notification needs `jsonrpc`, `method`, and `params`, but no `id`. The ACP answer update uses method `session/update` and update discriminator `agent_message_chunk`.
-- The reader task may perform the brief session-registry lookup before spawning; responsiveness requires avoiding the long model turn on the reader, not eliminating every short await.
+- Borrowing an `Arc<T>` or calling `Arc::as_ref` does not change its strong count; only cloning or dropping an owning
+  `Arc` changes that count.
+- Tokio tasks require an owned `Send + 'static` future because they may move between runtime worker threads. `Sync` is
+  separately required when shared references may be used across threads.
+- The ACP layer owns the model-sharing policy. `agent::turn` continues to accept `&M`; it does not need to know that ACP
+  stores the model in an `Arc<M>`.
+- A JSON-RPC notification needs `jsonrpc`, `method`, and `params`, but no `id`. The ACP answer update uses method
+  `session/update` and update discriminator `agent_message_chunk`.
+- The reader task may perform the brief session-registry lookup before spawning; responsiveness requires avoiding the
+  long model turn on the reader, not eliminating every short await.
 
 ### Source checkpoint
 
 - Branch `master` started this checkpoint at `fa9d8d9` with changes in `src/acp.rs` and this ledger.
-- `read_frames` wraps the injected model once in `Arc<M>`, and `dispatch` borrows that shared owner while `agent::turn` receives `&M` through `Arc::as_ref`.
-- The writer sender is borrowed by `dispatch`. A successful synchronous prompt sends a valid `session/update` notification containing the answer before returning its correlated `end_turn` response.
-- The scripted-model test verifies the notification method, absence of an ID, session ID, update discriminator, text content type, answer, final response, and retained conversation.
+- `read_frames` wraps the injected model once in `Arc<M>`, and `dispatch` borrows that shared owner while `agent::turn`
+  receives `&M` through `Arc::as_ref`.
+- The writer sender is borrowed by `dispatch`. A successful synchronous prompt sends a valid `session/update`
+  notification containing the answer before returning its correlated `end_turn` response.
+- The scripted-model test verifies the notification method, absence of an ID, session ID, update discriminator, text
+  content type, answer, final response, and retained conversation.
 - `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 59 Rust tests.
 
 ### Exact resume point
 
-1. In the successful prompt branch, clone the model `Arc` and writer sender and move those handles, the session handle, request ID, session ID, and prompt into `tokio::spawn`.
-2. Have the spawned task run `agent::turn`, then send both the `agent_message_chunk` notification and correlated success or error response; prompt dispatch should return `None` after spawning.
-3. Adjust the focused scripted-model test for asynchronous channel delivery, then add a duplex test proving update-before-response ordering.
-4. Add a reader-responsiveness test proving another request is handled while a prompt model call remains pending, then perform the Zed smoke test.
+1. In the successful prompt branch, clone the model `Arc` and writer sender and move those handles, the session handle,
+   request ID, session ID, and prompt into `tokio::spawn`.
+2. Have the spawned task run `agent::turn`, then send both the `agent_message_chunk` notification and correlated success
+   or error response; prompt dispatch should return `None` after spawning.
+3. Adjust the focused scripted-model test for asynchronous channel delivery, then add a duplex test proving
+   update-before-response ordering.
+4. Add a reader-responsiveness test proving another request is handled while a prompt model call remains pending, then
+   perform the Zed smoke test.
 
 ### Unverified or deferred
 
 - Prompt execution is still synchronous, so the reader remains blocked during the model turn.
 - The existing model-failure response branch still lacks focused coverage.
-- No duplex prompt-ordering test, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test, or Zed demo exists yet.
+- No duplex prompt-ordering test, reader-responsiveness test, same-session FIFO acceptance test, black-box prompt test,
+  or Zed demo exists yet.
 - Cancellation, permissions, tool-call updates, and broader ACP prompt-content compatibility remain later milestones.
 
 ## Session checkpoint — 2026-10-23 (Task 6 spawned prompt task)
 
 ### Current understanding
 
-- `tokio::spawn` creates a task, not an OS thread. On the multithreaded runtime, the task may move between worker threads, so its future and output must be `Send + 'static`.
-- `Sync` is not inherently required for a task's error output; it is required for the model because cloned `Arc<M>` handles let tasks access shared `&M` values across threads.
-- An async block's `Result` error type can be fixed by ending it with `Ok::<(), AcpError>(())`. Protocol responses must be sent through the writer channel rather than returned into an unobserved `JoinHandle`.
-- A model failure is handled once it is converted to a correlated JSON-RPC error and sent. Serialization or channel failures remain task-level `AcpError`s.
-- The session mutex must be acquired inside the spawned task. Moving a guard borrowed from `dispatch` would violate `'static` and could block the reader before the task was spawned.
+- `tokio::spawn` creates a task, not an OS thread. On the multithreaded runtime, the task may move between worker
+  threads, so its future and output must be `Send + 'static`.
+- `Sync` is not inherently required for a task's error output; it is required for the model because cloned `Arc<M>`
+  handles let tasks access shared `&M` values across threads.
+- An async block's `Result` error type can be fixed by ending it with `Ok::<(), AcpError>(())`. Protocol responses must
+  be sent through the writer channel rather than returned into an unobserved `JoinHandle`.
+- A model failure is handled once it is converted to a correlated JSON-RPC error and sent. Serialization or channel
+  failures remain task-level `AcpError`s.
+- The session mutex must be acquired inside the spawned task. Moving a guard borrowed from `dispatch` would violate
+  `'static` and could block the reader before the task was spawned.
 
 ### Source checkpoint
 
-- Branch `master` started this checkpoint at `b108596` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and `src/terminal.rs`.
-- Successful prompt dispatch clones owned model and writer handles, moves all prompt values into `tokio::spawn`, and immediately returns `None` to the reader.
-- The prompt task acquires the per-session lock, runs `agent::turn`, sends `agent_message_chunk`, and then sends the correlated `end_turn` response. Model failures are sent as correlated `-32603` responses.
-- Model and application error contracts now use `Box<dyn Error + Send + Sync>`, and the model bounds propagate `Send + Sync + 'static` through the reader and dispatch boundaries.
-- The focused scripted-model test expects `Ok(None)`, receives both channel messages, verifies update-before-response ordering, and still verifies retained conversation state.
-- A manual Zed smoke test succeeded on the preceding synchronous-update checkpoint: Zed launched Hobgoblin, created a session, rendered the model answer, and completed the turn. The newly spawned version has not yet been manually retested in Zed.
+- Branch `master` started this checkpoint at `b108596` with changes in `src/acp.rs`, `src/agent.rs`, `src/main.rs`, and
+  `src/terminal.rs`.
+- Successful prompt dispatch clones owned model and writer handles, moves all prompt values into `tokio::spawn`, and
+  immediately returns `None` to the reader.
+- The prompt task acquires the per-session lock, runs `agent::turn`, sends `agent_message_chunk`, and then sends the
+  correlated `end_turn` response. Model failures are sent as correlated `-32603` responses.
+- Model and application error contracts now use `Box<dyn Error + Send + Sync>`, and the model bounds propagate
+  `Send + Sync + 'static` through the reader and dispatch boundaries.
+- The focused scripted-model test expects `Ok(None)`, receives both channel messages, verifies update-before-response
+  ordering, and still verifies retained conversation state.
+- A manual Zed smoke test succeeded on the preceding synchronous-update checkpoint: Zed launched Hobgoblin, created a
+  session, rendered the model answer, and completed the turn. The newly spawned version has not yet been manually
+  retested in Zed.
 - `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 59 Rust tests.
 
 ### Exact resume point
 
-1. Add a controllable scripted model whose `complete` method signals that it started, then waits for a separate release signal before returning its canned answer.
-2. Drive initialize and `session/new` over `tokio::io::duplex`, send `session/prompt`, and wait for the model-start signal without releasing it.
-3. While the prompt is pending, send a second short request such as another `session/new`; assert its correlated response arrives before releasing the model.
-4. Release the model, then assert the original prompt's `session/update` arrives before its final response. Retest the spawned version manually in Zed afterward.
+1. Add a controllable scripted model whose `complete` method signals that it started, then waits for a separate release
+   signal before returning its canned answer.
+2. Drive initialize and `session/new` over `tokio::io::duplex`, send `session/prompt`, and wait for the model-start
+   signal without releasing it.
+3. While the prompt is pending, send a second short request such as another `session/new`; assert its correlated
+   response arrives before releasing the model.
+4. Release the model, then assert the original prompt's `session/update` arrives before its final response. Retest the
+   spawned version manually in Zed afterward.
 
 ### Unverified or deferred
 
@@ -771,24 +1055,33 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- A controllable model can expose deterministic concurrency with two `Arc<Notify>` signals: the model signals that `complete` started, then waits for the test to release it.
-- `Notify::notify_one` retains a permit when no waiter is active yet, so the test and model do not lose either signal if their scheduling order varies.
-- A duplex test proves reader responsiveness by withholding the model-release signal, sending another request, and receiving its correlated response before the pending prompt can emit output.
-- Reading and asserting the subsequent `session/update` and correlated `end_turn` response proves their wire ordering, not merely their eventual production.
-- `serde_json::Value::as_str` extracts the contents of a JSON string; `Value::to_string` serializes it with JSON quotation marks.
+- A controllable model can expose deterministic concurrency with two `Arc<Notify>` signals: the model signals that
+  `complete` started, then waits for the test to release it.
+- `Notify::notify_one` retains a permit when no waiter is active yet, so the test and model do not lose either signal if
+  their scheduling order varies.
+- A duplex test proves reader responsiveness by withholding the model-release signal, sending another request, and
+  receiving its correlated response before the pending prompt can emit output.
+- Reading and asserting the subsequent `session/update` and correlated `end_turn` response proves their wire ordering,
+  not merely their eventual production.
+- `serde_json::Value::as_str` extracts the contents of a JSON string; `Value::to_string` serializes it with JSON
+  quotation marks.
 
 ### Source checkpoint
 
 - Branch `prompt-execution-test` is at `c67e703` with uncommitted changes in `src/acp.rs` and this ledger.
-- `session_prompt_execution_does_not_block_reader` drives initialize, `session/new`, and `session/prompt` through `tokio::io::duplex` using a model paused inside `complete`.
-- While that prompt remains paused, a second `session/new` receives a valid correlated response. After release, the original prompt emits its expected `agent_message_chunk` update followed by its correlated `end_turn` response.
-- A manual smoke test of the spawned implementation succeeded in Zed, including a multi-turn conversation that retained session history.
+- `session_prompt_execution_does_not_block_reader` drives initialize, `session/new`, and `session/prompt` through
+  `tokio::io::duplex` using a model paused inside `complete`.
+- While that prompt remains paused, a second `session/new` receives a valid correlated response. After release, the
+  original prompt emits its expected `agent_message_chunk` update followed by its correlated `end_turn` response.
+- A manual smoke test of the spawned implementation succeeded in Zed, including a multi-turn conversation that retained
+  session history.
 - `./premerge.sh` passes, including formatting, Ruff, Clippy with warnings denied, and all 60 Rust tests.
 
 ### Exact resume point
 
 1. Review and commit the current responsiveness-test and progress-ledger changes when ready.
-2. Reconcile the remaining same-session FIFO and black-box ACP prompt coverage noted below with the final Task 6 completion criteria.
+2. Reconcile the remaining same-session FIFO and black-box ACP prompt coverage noted below with the final Task 6
+   completion criteria.
 3. If no additional Task 6 acceptance coverage is required, mark Task 6 complete and begin Task 7 cancellation design.
 
 ### Unverified or deferred
@@ -801,27 +1094,36 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- Task 6's critical path is complete: prompt work runs outside the reader, emits `agent_message_chunk` before `end_turn`, retains session history, and works for multi-turn conversations in Zed.
-- Same-session FIFO is a separate policy guarantee from mutual exclusion. The per-session mutex prevents concurrent mutation, but strict request-arrival ordering versus busy-session rejection remains a hardening decision.
-- The in-process duplex tests deterministically cover successful prompt transport. A successful black-box prompt case would additionally launch the real binary and requires an appropriate deterministic model/provider seam.
-- Task 7 introduces cancellation by dropping futures, cancellation safety, and cancellation of blocking subprocess work. Its signaling ownership and conversation-history policy remain learner decisions.
+- Task 6's critical path is complete: prompt work runs outside the reader, emits `agent_message_chunk` before
+  `end_turn`, retains session history, and works for multi-turn conversations in Zed.
+- Same-session FIFO is a separate policy guarantee from mutual exclusion. The per-session mutex prevents concurrent
+  mutation, but strict request-arrival ordering versus busy-session rejection remains a hardening decision.
+- The in-process duplex tests deterministically cover successful prompt transport. A successful black-box prompt case
+  would additionally launch the real binary and requires an appropriate deterministic model/provider seam.
+- Task 7 introduces cancellation by dropping futures, cancellation safety, and cancellation of blocking subprocess work.
+  Its signaling ownership and conversation-history policy remain learner decisions.
 
 ### Source checkpoint
 
-- `master` and `origin/master` point to `fee3404`, which includes the Task 6 reader-responsiveness test and preceding spawned-prompt work.
+- `master` and `origin/master` point to `fee3404`, which includes the Task 6 reader-responsiveness test and preceding
+  spawned-prompt work.
 - `./premerge.sh` passed with all 60 Rust tests before Task 6 was marked complete.
 - The successful multi-turn Zed smoke test is recorded in the preceding checkpoint.
-- Same-session FIFO/busy-session semantics and deterministic subprocess prompt acceptance are recorded in the roadmap hardening backlog rather than treated as Task 6 blockers.
+- Same-session FIFO/busy-session semantics and deterministic subprocess prompt acceptance are recorded in the roadmap
+  hardening backlog rather than treated as Task 6 blockers.
 
 ### Exact resume point
 
-1. Start Task 7 by reviewing the current prompt-task lifecycle and the draft cancellation contract in `07-cancellation.md`.
+1. Start Task 7 by reviewing the current prompt-task lifecycle and the draft cancellation contract in
+   `07-cancellation.md`.
 2. Refine the draft acceptance boundary against the current code without implementing cancellation yet.
-3. When implementation requires it, make the first Task 7 decision: which mechanism signals cancellation and which component owns that signal.
+3. When implementation requires it, make the first Task 7 decision: which mechanism signals cancellation and which
+   component owns that signal.
 
 ### Unverified or deferred
 
-- The hardening backlog contains same-session FIFO/busy-session semantics and a deterministic black-box successful prompt case.
+- The hardening backlog contains same-session FIFO/busy-session semantics and a deterministic black-box successful
+  prompt case.
 - Spawned prompt-task failures after writer closure remain unsupervised.
 - Task 7 cancellation behavior and its acceptance tests have not started.
 
@@ -829,38 +1131,53 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- Cancellation uses a per-turn `tokio::sync::oneshot` channel. The sender lives in separately locked transient state on `SessionEntry`; the spawned prompt task owns the receiver.
-- The prompt task directly races `agent::turn(...)` against the receiver with `tokio::select!`. The branches are futures running in the existing task; spawning either branch would detach work rather than provide cancellation by dropping.
-- `session/cancel` is a JSON-RPC notification, so `read_frames` routes it separately from request `dispatch`. The handler looks up the session, takes the sender from its `Option`, and signals it without holding the cancellation-state mutex.
-- Cancelled turns will roll conversation history back to its pre-turn length. This keeps the current invariant that model history contains only completed turns.
-- When work is explicitly identified as unfinished, review only the part declared ready; do not critique temporary diagnostics, TODOs, expected test gaps, or other unfinished scaffolding.
+- Cancellation uses a per-turn `tokio::sync::oneshot` channel. The sender lives in separately locked transient state on
+  `SessionEntry`; the spawned prompt task owns the receiver.
+- The prompt task directly races `agent::turn(...)` against the receiver with `tokio::select!`. The branches are futures
+  running in the existing task; spawning either branch would detach work rather than provide cancellation by dropping.
+- `session/cancel` is a JSON-RPC notification, so `read_frames` routes it separately from request `dispatch`. The
+  handler looks up the session, takes the sender from its `Option`, and signals it without holding the
+  cancellation-state mutex.
+- Cancelled turns will roll conversation history back to its pre-turn length. This keeps the current invariant that
+  model history contains only completed turns.
+- When work is explicitly identified as unfinished, review only the part declared ready; do not critique temporary
+  diagnostics, TODOs, expected test gaps, or other unfinished scaffolding.
 
 ### Source checkpoint
 
-- Branch `prompt-cancellation` points to `8a4bc7e` (`Race the agent turn and cancellation channel`) and matches `origin/prompt-cancellation`.
+- Branch `prompt-cancellation` points to `8a4bc7e` (`Race the agent turn and cancellation channel`) and matches
+  `origin/prompt-cancellation`.
 - The working tree has no source changes; `AGENTS.md` is modified outside the Task 7 source work.
-- The prompt task now installs a `oneshot::Sender`, races `agent::turn` against its receiver, and reuses the `Result` returned by the winning turn branch rather than calling `agent::turn` a second time.
+- The prompt task now installs a `oneshot::Sender`, races `agent::turn` against its receiver, and reuses the `Result`
+  returned by the winning turn branch rather than calling `agent::turn` a second time.
 
 ### Exact resume point
 
 1. Continue at the `None` branch of the prompt task's `turn_result` match in `src/acp.rs`.
-2. On cancellation, restore conversation history to the recorded pre-turn length and respond to the original prompt with `stopReason: "cancelled"`.
-3. Complete active-sender cleanup on every terminal path, then finish the in-progress cancellation test and run focused validation.
+2. On cancellation, restore conversation history to the recorded pre-turn length and respond to the original prompt with
+   `stopReason: "cancelled"`.
+3. Complete active-sender cleanup on every terminal path, then finish the in-progress cancellation test and run focused
+   validation.
 
 ### Unverified or deferred
 
-- No passing validation was reported after commit `8a4bc7e`; the focused retained-conversation test previously exposed and led to fixing a duplicate `agent::turn` call.
+- No passing validation was reported after commit `8a4bc7e`; the focused retained-conversation test previously exposed
+  and led to fixing a duplicate `agent::turn` call.
 - Cancellation cleanup is still a `todo!`, and the recorded history length is not used yet.
-- Cancellation error handling, session reuse after cancellation, long-running tool-process termination, and final acceptance coverage remain unfinished.
+- Cancellation error handling, session reuse after cancellation, long-running tool-process termination, and final
+  acceptance coverage remain unfinished.
 - Same-session FIFO versus busy-session behavior remains in the hardening backlog.
 
 ## Session checkpoint — 2026-11-12 (Task 7 paused; Task 6b cleanup inserted)
 
 ### Current understanding
 
-- Task 7 is paused, not abandoned. Its committed work (releasing the turn's cancellation sender after `select!` finishes) stays in `src/acp.rs` and moves with the cleanup.
-- Task 6b changes structure only. Bugs found in the 2026-11-11 review are listed in `06b-cleanup.md` with the milestone that owns each one; they are not fixed in 6b.
-- Step order: test support, then `dispatch` delegation, then the typed request error, then the file split. Each step ends green and is its own commit.
+- Task 7 is paused, not abandoned. Its committed work (releasing the turn's cancellation sender after `select!`
+  finishes) stays in `src/acp.rs` and moves with the cleanup.
+- Task 6b changes structure only. Bugs found in the 2026-11-11 review are listed in `06b-cleanup.md` with the milestone
+  that owns each one; they are not fixed in 6b.
+- Step order: test support, then `dispatch` delegation, then the typed request error, then the file split. Each step
+  ends green and is its own commit.
 
 ### Source checkpoint
 
@@ -881,246 +1198,376 @@ Rust principles practiced in Task 2: model mutually exclusive CLI options with C
 
 ### Current understanding
 
-- `Model` fixes the call contract, not the concrete implementation's fields. Scripted responses configure behavior internally; recorded requests remain full JSON request values.
-- `Mutex` provides interior mutability for `complete(&self, ...)`; `Arc` provides shared ownership when the test retains access after handing the model to ACP.
-- An `Arc<ScriptedModel>` needs its own forwarding `Model` implementation to satisfy a generic `M: Model` bound; method autoderef alone does not satisfy that bound.
+- `Model` fixes the call contract, not the concrete implementation's fields. Scripted responses configure behavior
+  internally; recorded requests remain full JSON request values.
+- `Mutex` provides interior mutability for `complete(&self, ...)`; `Arc` provides shared ownership when the test retains
+  access after handing the model to ACP.
+- An `Arc<ScriptedModel>` needs its own forwarding `Model` implementation to satisfy a generic `M: Model` bound; method
+  autoderef alone does not satisfy that bound.
 - Futures are lazy. Creating a future does not run it, and a spawned async block must await the inner ACP future.
-- The gated reply uses `started` and `released` notifications. Merely checking eventual completion does not prove it waited for release.
+- The gated reply uses `started` and `released` notifications. Merely checking eventual completion does not prove it
+  waited for release.
 
 ### Source checkpoint
 
-- Shared scripted replies and request recording live in `src/scripted_model.rs`; immediate and gated variants replace the repeated scripted model implementations. `InertModel` remains for tests that must not call a model.
-- `src/test_messages.rs` contains assistant reply, prompt request, cancellation notification, and agent message chunk helpers. Both shared modules are test-only in `main.rs`.
-- The interactive conversation test now supplies two canned replies for two turns. The cancellation assertion was adjusted to inspect the recorded request's `messages` field rather than comparing the entire request to an array.
-- User explicitly deferred the shared test client and Cursor setup helpers. Their design decision remains open until that work is resumed. The task guide records this scope adjustment.
-- Latest validation run in this session: `cargo test --locked` exited 0, 63 passed. `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` exited 0 with one warning: `dispatch` (156/100 lines). No test-function length warnings remain.
+- Shared scripted replies and request recording live in `src/scripted_model.rs`; immediate and gated variants replace
+  the repeated scripted model implementations. `InertModel` remains for tests that must not call a model.
+- `src/test_messages.rs` contains assistant reply, prompt request, cancellation notification, and agent message chunk
+  helpers. Both shared modules are test-only in `main.rs`.
+- The interactive conversation test now supplies two canned replies for two turns. The cancellation assertion was
+  adjusted to inspect the recorded request's `messages` field rather than comparing the entire request to an array.
+- User explicitly deferred the shared test client and Cursor setup helpers. Their design decision remains open until
+  that work is resumed. The task guide records this scope adjustment.
+- Latest validation run in this session: `cargo test --locked` exited 0, 63 passed.
+  `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` exited 0 with one warning: `dispatch` (156/100
+  lines). No test-function length warnings remain.
 
 ### Exact resume point
 
-- Next implementation: Task 6b Step 2, make `dispatch` delegate, beginning with one handler extraction while keeping existing behavior and error responses unchanged.
-- Inspect the current initialize branch and agree its extraction boundary before implementing. Do not front-load the later typed-error or module-split designs.
+- Next implementation: Task 6b Step 2, make `dispatch` delegate, beginning with one handler extraction while keeping
+  existing behavior and error responses unchanged.
+- Inspect the current initialize branch and agree its extraction boundary before implementing. Do not front-load the
+  later typed-error or module-split designs.
 - Keep source edits learner-owned. No commit was made by the assistant.
 
 ### Unverified or deferred
 
-- Step 1 implementation is complete under revised scope, but final acceptance is not fully verified: run `./premerge.sh`, the black-box ACP suite, and the baseline test-name comparison. Account explicitly for the two added scripted-model tests (61 baseline versus 63 now); count alone does not prove no old test was lost.
+- Step 1 implementation is complete under revised scope, but final acceptance is not fully verified: run
+  `./premerge.sh`, the black-box ACP suite, and the baseline test-name comparison. Account explicitly for the two added
+  scripted-model tests (61 baseline versus 63 now); count alone does not prove no old test was lost.
 - Whether the gated-model test now definitively checks waiting before release has not been re-reviewed.
-- The sole Clippy length warning belongs to Step 2. Shared test client and Cursor helpers are deferred, not required for closing the revised Step 1.
+- The sole Clippy length warning belongs to Step 2. Shared test client and Cursor helpers are deferred, not required for
+  closing the revised Step 1.
 - Task 7 remains paused; no cancellation behavior changes belong to this cleanup.
 
 ## Session checkpoint — 2026-11-13 (Task 6b split in progress; coffee break)
 
 ### Current understanding
 
-- Prompt admission returns `Result<(), ErrorResponse>`: success means the spawned task owns the eventual response. Dispatcher `None` means no immediate frame; JSON `null` is not a substitute.
-- The extracted `issue_prompt` takes the request ID rather than the whole request. Consuming params separately is a partial move and removes the need to clone their JSON.
+- Prompt admission returns `Result<(), ErrorResponse>`: success means the spawned task owns the eventual response.
+  Dispatcher `None` means no immediate frame; JSON `null` is not a substitute.
+- The extracted `issue_prompt` takes the request ID rather than the whole request. Consuming params separately is a
+  partial move and removes the need to clone their JSON.
 - Parent layout chosen: keep `src/acp.rs`, with child modules under `src/acp/`, rather than `mod.rs`.
-- Cargo reads saved files. Temporarily duplicated tests (66 instead of 63) came from an unsaved removal after copying; saving restored 63.
+- Cargo reads saved files. Temporarily duplicated tests (66 instead of 63) came from an unsaved removal after copying;
+  saving restored 63.
 
 ### Source checkpoint
 
-- `message_handling.rs` now owns request dispatch, initialize/new-session/prompt handlers, prompt parsing, the spawned turn body, and related unit tests.
-- `session_registry.rs` owns session IDs, entries, registry aliases, lookup, and lookup tests. `transport.rs` currently owns the two writer functions.
-- `acp.rs` retains wire types, connection state, framing/classification, reader routing including cancellation, orchestration, and remaining tests.
-- User chose to pause the match-router rewrite and proceed to Step 4 before completing Steps 2–3. These earlier steps remain unfinished, not waived.
-- Source working tree was clean at review. Assistant validation: `cargo test --locked` passed all 63 tests; `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` passed without warnings. User also reported an earlier executable build and successful Zed smoke test after extraction.
+- `message_handling.rs` now owns request dispatch, initialize/new-session/prompt handlers, prompt parsing, the spawned
+  turn body, and related unit tests.
+- `session_registry.rs` owns session IDs, entries, registry aliases, lookup, and lookup tests. `transport.rs` currently
+  owns the two writer functions.
+- `acp.rs` retains wire types, connection state, framing/classification, reader routing including cancellation,
+  orchestration, and remaining tests.
+- User chose to pause the match-router rewrite and proceed to Step 4 before completing Steps 2–3. These earlier steps
+  remain unfinished, not waived.
+- Source working tree was clean at review. Assistant validation: `cargo test --locked` passed all 63 tests;
+  `cargo clippy --locked --all-targets -- -W clippy::too_many_lines` passed without warnings. User also reported an
+  earlier executable build and successful Zed smoke test after extraction.
 
 ### Exact resume point
 
-- Continue the file split one move at a time. Suggested next bounded move: move the direct `write_frame` unit test beside its implementation in `transport.rs`; leave whole-connection writer/reader tests at the integration level.
-- Module boundaries are coherent so far. Later, narrow internal visibility (`pub(super)` where appropriate; private for same-module helpers) rather than exposing every extracted function with `pub`.
+- Continue the file split one move at a time. Suggested next bounded move: move the direct `write_frame` unit test
+  beside its implementation in `transport.rs`; leave whole-connection writer/reader tests at the integration level.
+- Module boundaries are coherent so far. Later, narrow internal visibility (`pub(super)` where appropriate; private for
+  same-module helpers) rather than exposing every extracted function with `pub`.
 - Keep all source edits learner-owned and save all changed files before validation.
 
 ### Unverified or deferred
 
-- Full premerge, black-box suite, and baseline test-name comparison were not run in this review; 63 passing tests alone does not prove preservation of every test name.
+- Full premerge, black-box suite, and baseline test-name comparison were not run in this review; 63 passing tests alone
+  does not prove preservation of every test name.
 - Parent remains 1,497 lines and message handling 674 including tests; file split acceptance is not yet met.
-- Router simplification, shared serialization, typed request errors, cancellation handler extraction, and remaining Step 2 cleanup remain deferred. Task 7 lifecycle issues remain deferred as before.
+- Router simplification, shared serialization, typed request errors, cancellation handler extraction, and remaining Step
+  2 cleanup remain deferred. Task 7 lifecycle issues remain deferred as before.
 
 ## Session checkpoint — 2026-11-13 (Task 6b JSON-RPC split; end of session)
 
 ### Current understanding
 
-- `json_rpc` is an internal grouping of ACP envelope code, not a reusable ACP-independent JSON-RPC library; ACP-specific error helpers can live there.
+- `json_rpc` is an internal grouping of ACP envelope code, not a reusable ACP-independent JSON-RPC library; ACP-specific
+  error helpers can live there.
 - `acp.rs` has a useful coordination role; it does not need to contain only `run_acp`.
-- `pub(super)` exposes an item within its parent module, including siblings, without exposing it throughout the crate. Fields and associated functions have separate visibility.
-- Inline `#[cfg(test)] mod tests { ... }` and a separate `#[cfg(test)] mod tests;` loading `acp/tests.rs` represent the same module structure. The separate file contains no additional `mod tests` wrapper.
-- Connection-level tests inside the crate can exercise the whole connection while retaining parent-private access; they need not move to Cargo's top-level `tests/` directory.
-- The guide's roughly 500-line target is a readability guideline, not a Rust convention; avoid arbitrary subdivisions of a cohesive test suite.
+- `pub(super)` exposes an item within its parent module, including siblings, without exposing it throughout the crate.
+  Fields and associated functions have separate visibility.
+- Inline `#[cfg(test)] mod tests { ... }` and a separate `#[cfg(test)] mod tests;` loading `acp/tests.rs` represent the
+  same module structure. The separate file contains no additional `mod tests` wrapper.
+- Connection-level tests inside the crate can exercise the whole connection while retaining parent-private access; they
+  need not move to Cargo's top-level `tests/` directory.
+- The guide's roughly 500-line target is a readability guideline, not a Rust convention; avoid arbitrary subdivisions of
+  a cohesive test suite.
 
 ### Source checkpoint
 
 - JSON-RPC envelope code has been extracted into `src/acp/json_rpc.rs`; `schema.rs` holds ACP wire types.
-- At review, `acp.rs` was 1,145 lines, `json_rpc.rs` 263, `message_handling.rs` 678, `schema.rs` 85, `session_registry.rs` 93, and `transport.rs` 64.
-- User reported moving `validate_request`, but the source visible to the assistant still contained it in `acp.rs`; that final move was not confirmed.
+- At review, `acp.rs` was 1,145 lines, `json_rpc.rs` 263, `message_handling.rs` 678, `schema.rs` 85,
+  `session_registry.rs` 93, and `transport.rs` 64.
+- User reported moving `validate_request`, but the source visible to the assistant still contained it in `acp.rs`; that
+  final move was not confirmed.
 - Assistant ran `cargo test --locked`: all 63 tests passed. No source files were edited by the assistant.
 
 ### Exact resume point
 
-- Continue Task 6b Step 4. Suggested next mechanical move: extract whole-connection tests and their helpers from `acp.rs` into `src/acp/tests.rs`, preserving the `acp::tests` module identity.
-- Two tests in the reviewed parent module are not connection tests: `omitted_client_capabilities_uses_default` belongs with schema tests; `session_prompt_runs_model_and_retains_conversation` calls `dispatch_request` directly and belongs with message-handling tests.
-- Connection test helpers to move with their callers: `read_frame`, `send_frame`, `initialize`, `create_new_session`, and `valid_request_frame_with_size`.
-- Verify saved source for the reported `validate_request` move, then run `cargo test --locked` after the next extraction.
+- Continue Task 6b Step 4. Suggested next mechanical move: extract whole-connection tests and their helpers from
+  `acp.rs` into `src/acp/tests.rs`, preserving the `acp::tests` module identity.
+- Two tests in the reviewed parent module are not connection tests: `omitted_client_capabilities_uses_default` belongs
+  with schema tests; `session_prompt_runs_model_and_retains_conversation` calls `dispatch_request` directly and belongs
+  with message-handling tests.
+- Connection test helpers to move with their callers: `read_frame`, `send_frame`, `initialize`, `create_new_session`,
+  and `valid_request_frame_with_size`.
+- Verify saved source for the reported `validate_request` move, then run `cargo test --locked` after the next
+  extraction.
 
 ### Unverified or deferred
 
 - The connection-test extraction was discussed, not confirmed implemented.
-- Step 4 is a reasonable checkpoint, not complete: framing still lives with routing in `read_frames`; the guide proposes transport reading one frame independently of handlers. File-size goals also remain outstanding.
-- Steps 2–3 remain deferred, not waived: router simplification, shared serialization, typed request errors, cancellation-handler extraction, and other listed cleanup remain unfinished. Task 7 lifecycle work stays paused.
-- Full premerge, black-box ACP suite, and baseline test-name comparison were not run during this part of the session. The passing test count alone does not establish preservation of all test names.
+- Step 4 is a reasonable checkpoint, not complete: framing still lives with routing in `read_frames`; the guide proposes
+  transport reading one frame independently of handlers. File-size goals also remain outstanding.
+- Steps 2–3 remain deferred, not waived: router simplification, shared serialization, typed request errors,
+  cancellation-handler extraction, and other listed cleanup remain unfinished. Task 7 lifecycle work stays paused.
+- Full premerge, black-box ACP suite, and baseline test-name comparison were not run during this part of the session.
+  The passing test count alone does not establish preservation of all test names.
 
 ## Session checkpoint — 2026-11-16 (Task 6b typed request errors; end of session)
 
 ### Current understanding
 
-- `From<T>` receives one specific source type, not arbitrary error types or handler context. Keeping the request ID outside `RequestError` allows parsing errors to convert without inventing an ID; the response boundary supplies it.
-- `?` uses `From` to convert errors. Parameter deserialization should yield `InvalidParams`; response serialization should explicitly map to `InternalError`, even though both use `serde_json::Error`.
+- `From<T>` receives one specific source type, not arbitrary error types or handler context. Keeping the request ID
+  outside `RequestError` allows parsing errors to convert without inventing an ID; the response boundary supplies it.
+- `?` uses `From` to convert errors. Parameter deserialization should yield `InvalidParams`; response serialization
+  should explicitly map to `InternalError`, even though both use `serde_json::Error`.
 - `matches!` asserts an enum variant without requiring `PartialEq`; guards can inspect fields.
-- A function without an explicit return type returns unit `()`. A trailing semicolon discards a match's value; serializing unit produces JSON `null`. Adding `-> Self` and returning the match fixed four response-envelope test failures.
-- Awaiting a spawned prompt immediately inside `handle_prompt` pauses the reader call chain. The task's result must be handled inside the spawned task to preserve reader responsiveness. Joining produces an outer task result and an inner application result.
-- Sending an error response is best-effort: a closed outgoing channel cannot deliver it. Request failures and transport failures still need distinct treatment.
+- A function without an explicit return type returns unit `()`. A trailing semicolon discards a match's value;
+  serializing unit produces JSON `null`. Adding `-> Self` and returning the match fixed four response-envelope test
+  failures.
+- Awaiting a spawned prompt immediately inside `handle_prompt` pauses the reader call chain. The task's result must be
+  handled inside the spawned task to preserve reader responsiveness. Joining produces an outer task result and an inner
+  application result.
+- Sending an error response is best-effort: a closed outgoing channel cannot deliver it. Request failures and transport
+  failures still need distinct treatment.
 
 ### Source checkpoint
 
 - `src/acp/errors.rs` contains all five request-error variants and a Serde-to-invalid-params conversion.
-- Initialize, new-session, and prompt handlers return typed request errors; `parse_prompt_params` no longer returns `()`.
-- `ErrorResponse::from(error, request_id)` in `src/acp/json_rpc.rs` centralizes response construction and is used by both `read_frames` and the spawned prompt wrapper.
-- The spawned wrapper handles `issue_prompt` failure by converting and queuing an error response without awaiting the task from the reader. Serialization/send failures in this wrapper are currently silently ignored.
-- `ScriptedModel` now supports `TurnResponse::Error`. The new `session_prompt_runs_sends_an_error_if_the_model_call_fails` test checks the outgoing-channel response's version, ID, message, and absence of `result`. The latest version includes a one-second receive timeout; it does not yet assert the error code.
-- At session close, HEAD and origin/master were `0706447` (`Fix a clippy suggestion.`); preceding commit `4134725` adds the model-failure test. The source tree was clean. `CODE_ASSESSMENT.md` remains untracked and was deliberately left untouched, not ignored.
-- No source files were edited by the assistant. Commit `b350c14` was committed and pushed earlier in the session at the user's request; subsequent commits are reflected above.
+- Initialize, new-session, and prompt handlers return typed request errors; `parse_prompt_params` no longer returns
+  `()`.
+- `ErrorResponse::from(error, request_id)` in `src/acp/json_rpc.rs` centralizes response construction and is used by
+  both `read_frames` and the spawned prompt wrapper.
+- The spawned wrapper handles `issue_prompt` failure by converting and queuing an error response without awaiting the
+  task from the reader. Serialization/send failures in this wrapper are currently silently ignored.
+- `ScriptedModel` now supports `TurnResponse::Error`. The new
+  `session_prompt_runs_sends_an_error_if_the_model_call_fails` test checks the outgoing-channel response's version, ID,
+  message, and absence of `result`. The latest version includes a one-second receive timeout; it does not yet assert the
+  error code.
+- At session close, HEAD and origin/master were `0706447` (`Fix a clippy suggestion.`); preceding commit `4134725` adds
+  the model-failure test. The source tree was clean. `CODE_ASSESSMENT.md` remains untracked and was deliberately left
+  untouched, not ignored.
+- No source files were edited by the assistant. Commit `b350c14` was committed and pushed earlier in the session at the
+  user's request; subsequent commits are reflected above.
 
 ### Exact resume point
 
-1. Finish the model-failure regression test by asserting error code `-32603`; correct its assertion wording from “a result response” to “an error response.” Rerun the focused test.
-2. Continue Step 3 acceptance review before adding the optional transport-error enum. In particular, review the broad pre-initialization guard against the guide's behavior-preservation requirement; it changes the prompt-before-initialize path. The current `CONNECTION_NOT_INITIALIZED_CODE` was also observed as `-32600`, whereas the guide names `-32001`; reconcile with baseline behavior and wire-level tests rather than assuming equivalence.
-3. Check response serialization within `issue_prompt`: bare Serde `?` still maps through `From` to `InvalidParams`, unlike `build_success_response`. Channel-send errors are currently mapped to `InternalError`; transport classification remains unfinished.
-4. Once these bounded checks are resolved, run the guide's full acceptance commands. Task 7 lifecycle work remains paused; do not expand into cancellation redesign during cleanup.
+1. Finish the model-failure regression test by asserting error code `-32603`; correct its assertion wording from “a
+   result response” to “an error response.” Rerun the focused test.
+2. Continue Step 3 acceptance review before adding the optional transport-error enum. In particular, review the broad
+   pre-initialization guard against the guide's behavior-preservation requirement; it changes the
+   prompt-before-initialize path. The current `CONNECTION_NOT_INITIALIZED_CODE` was also observed as `-32600`, whereas
+   the guide names `-32001`; reconcile with baseline behavior and wire-level tests rather than assuming equivalence.
+3. Check response serialization within `issue_prompt`: bare Serde `?` still maps through `From` to `InvalidParams`,
+   unlike `build_success_response`. Channel-send errors are currently mapped to `InternalError`; transport
+   classification remains unfinished.
+4. Once these bounded checks are resolved, run the guide's full acceptance commands. Task 7 lifecycle work remains
+   paused; do not expand into cancellation redesign during cleanup.
 
 ### Validation and unverified work
 
-- Earlier full `cargo test --locked` runs passed 63 tests; an intermediate run exited 101 with 59 passing and four failing because the response conversion returned unit. After correction, all 63 passed again.
-- Focused `cargo test --locked session_prompt_runs_sends_an_error_if_the_model_call_fails` exited 0: one passed, 63 filtered out (before the final timeout/Clippy edits).
-- Session-close `cargo test --locked` at `0706447` exited 0: all 64 tests passed, including the latest timeout-based test, cancellation, and reader responsiveness. No report file was generated.
-- Full premerge, black-box ACP suite, and baseline test-name comparison were not run by the assistant this session. The new test intentionally increases the count; update the comparison baseline with that addition when validating.
-- The failure regression exercises the outgoing channel, not actual stdout delivery. Wire-level error-code preservation still needs explicit verification. Step 2/4 remaining cleanup requirements from the guide are not waived.
+- Earlier full `cargo test --locked` runs passed 63 tests; an intermediate run exited 101 with 59 passing and four
+  failing because the response conversion returned unit. After correction, all 63 passed again.
+- Focused `cargo test --locked session_prompt_runs_sends_an_error_if_the_model_call_fails` exited 0: one passed, 63
+  filtered out (before the final timeout/Clippy edits).
+- Session-close `cargo test --locked` at `0706447` exited 0: all 64 tests passed, including the latest timeout-based
+  test, cancellation, and reader responsiveness. No report file was generated.
+- Full premerge, black-box ACP suite, and baseline test-name comparison were not run by the assistant this session. The
+  new test intentionally increases the count; update the comparison baseline with that addition when validating.
+- The failure regression exercises the outgoing channel, not actual stdout delivery. Wire-level error-code preservation
+  still needs explicit verification. Step 2/4 remaining cleanup requirements from the guide are not waived.
 
 ## Session checkpoint — 2026-11-17 (Task 7 direct-child cancellation)
 
 ### Current understanding
 
-- Tokio process execution yields while waiting; making a function async alone does not make blocking operations nonblocking. Dropping a turn future requires `kill_on_drop(true)` to terminate its directly spawned child.
-- Scope chosen for now: direct-child termination, not process-group or descendant cleanup. `exec sleep 5` replaces Bash and preserves its PID, so the test targets this exact guarantee.
-- Test-client prompt and cancel operations are send-only. Prompt returns its allocated request ID; the test explicitly reads updates and completion. Cancellation is a notification, not a request with its own response.
-- PID-file polling establishes that the tool started before cancellation. String parsing uses `trim().parse::<u32>()`; filesystem errors are distinguished with `ErrorKind` match guards. An overall timeout bounds polling, with async sleep between retries.
-- A process-exit deadline must be shorter than natural command completion. Otherwise a test can pass even when cancellation does not kill the child.
+- Tokio process execution yields while waiting; making a function async alone does not make blocking operations
+  nonblocking. Dropping a turn future requires `kill_on_drop(true)` to terminate its directly spawned child.
+- Scope chosen for now: direct-child termination, not process-group or descendant cleanup. `exec sleep 5` replaces Bash
+  and preserves its PID, so the test targets this exact guarantee.
+- Test-client prompt and cancel operations are send-only. Prompt returns its allocated request ID; the test explicitly
+  reads updates and completion. Cancellation is a notification, not a request with its own response.
+- PID-file polling establishes that the tool started before cancellation. String parsing uses `trim().parse::<u32>()`;
+  filesystem errors are distinguished with `ErrorKind` match guards. An overall timeout bounds polling, with async sleep
+  between retries.
+- A process-exit deadline must be shorter than natural command completion. Otherwise a test can pass even when
+  cancellation does not kill the child.
 
 ### Source checkpoint
 
-- `src/acp/test_client.rs` centralizes framing, bounded reads, initialization, session creation, request IDs, and send-only prompt/cancel helpers. The model cancellation test uses the client while retaining history and session-reuse assertions.
-- `src/tools.rs` uses `tokio::process::Command` with `kill_on_drop(true)` and awaits output; the tool call chain is asynchronous.
-- `src/acp.rs::prompt_cancelation_stops_tools` waits for the PID file, cancels, checks the original prompt response, then polls `kill -0` for disappearance with a one-second deadline against `sleep 5`.
-- `src/test_messages.rs` provides tool-call and assistant-with-tool-calls fixtures; tool arguments are JSON text stored as a string.
-- No source files were edited by the assistant. At wrap-up, git status showed only untracked `CODE_ASSESSMENT.md` and `prompt_cancelation_stops_tools.pid`; both were left untouched.
+- `src/acp/test_client.rs` centralizes framing, bounded reads, initialization, session creation, request IDs, and
+  send-only prompt/cancel helpers. The model cancellation test uses the client while retaining history and session-reuse
+  assertions.
+- `src/tools.rs` uses `tokio::process::Command` with `kill_on_drop(true)` and awaits output; the tool call chain is
+  asynchronous.
+- `src/acp.rs::prompt_cancellation_stops_tools` waits for the PID file, cancels, checks the original prompt response,
+  then polls `kill -0` for disappearance with a one-second deadline against `sleep 5`.
+- `src/test_messages.rs` provides tool-call and assistant-with-tool-calls fixtures; tool arguments are JSON text stored
+  as a string.
+- No source files were edited by the assistant. At wrap-up, git status showed only untracked `CODE_ASSESSMENT.md` and
+  `prompt_cancellation_stops_tools.pid`; both were left untouched.
 
 ### Validation
 
-- User reported the expected process-exit timeout after temporarily disabling `kill_on_drop(true)`, demonstrating the regression test catches the missing behavior.
+- User reported the expected process-exit timeout after temporarily disabling `kill_on_drop(true)`, demonstrating the
+  regression test catches the missing behavior.
 - Assistant confirmed `kill_on_drop(true)` restored and the process-exit deadline set to one second.
-- Final `cargo test --locked` passed: 65 tests, zero failures, 0.26 seconds. The expected `kill: ... No such process` diagnostic appears on stderr.
+- Final `cargo test --locked` passed: 65 tests, zero failures, 0.26 seconds. The expected `kill: ... No such process`
+  diagnostic appears on stderr.
 - Full premerge, external ACP acceptance, and Zed cancellation smoke testing were not run this session.
 
 ### Exact resume point and deferred work
 
-1. Continue Task 7 acceptance review rather than reimplementing cancellation. Confirm coverage for idle/unknown-session cancellation and any remaining guide requirements before marking complete.
-2. Process-existence helper currently treats every nonzero `kill -0` status as absence, including permission errors. PID-file setup uses a fixed relative filename and leaves it behind; isolated paths and cleanup remain test hardening work.
-3. Immediate cancellation can arrive before the spawned prompt task installs its sender and be ignored. Waiting for the PID file correctly scopes this test to a running tool but does not fix that separate startup race.
+1. Continue Task 7 acceptance review rather than reimplementing cancellation. Confirm coverage for idle/unknown-session
+   cancellation and any remaining guide requirements before marking complete.
+2. Process-existence helper currently treats every nonzero `kill -0` status as absence, including permission errors.
+   PID-file setup uses a fixed relative filename and leaves it behind; isolated paths and cleanup remain test hardening
+   work.
+3. Immediate cancellation can arrive before the spawned prompt task installs its sender and be ignored. Waiting for the
+   PID file correctly scopes this test to a running tool but does not fix that separate startup race.
 4. Descendant termination/process groups remain explicitly deferred. Do not expand that scope without a new decision.
-5. Task 6b cleanup acceptance checks from the 2026-11-16 checkpoint remain outstanding; resuming cancellation did not waive them.
+5. Task 6b cleanup acceptance checks from the 2026-11-16 checkpoint remain outstanding; resuming cancellation did not
+   waive them.
 
 ## Session checkpoint — 2026-11-18 (Task 7 verification)
 
 ### Current understanding
 
-- `tokio::spawn` schedules a task, not a new thread, and does not synchronously poll it. The default `#[tokio::test]` runtime is single-threaded. An `.await` yields only when the awaited operation returns Pending.
-- The registration regression test relies on isolated, uncontended locks and no yield between spawning and its synchronous `try_lock` / `is_some` assertion. The learner verified it fails when registration is moved inside the spawned task and passes with early registration.
+- `tokio::spawn` schedules a task, not a new thread, and does not synchronously poll it. The default `#[tokio::test]`
+  runtime is single-threaded. An `.await` yields only when the awaited operation returns Pending.
+- The registration regression test relies on isolated, uncontended locks and no yield between spawning and its
+  synchronous `try_lock` / `is_some` assertion. The learner verified it fails when registration is moved inside the
+  spawned task and passes with early registration.
 
 ### Source checkpoint
 
-- `handle_prompt` creates one cancellation channel and registers its sender before spawning; `issue_prompt` receives that receiver, with no duplicate registration.
+- `handle_prompt` creates one cancellation channel and registers its sender before spawning; `issue_prompt` receives
+  that receiver, with no duplicate registration.
 - Idle and unknown-session cancellation are covered together with a subsequent successful prompt.
-- Existing model cancellation tests cover cancelled completion, history rollback, and session reuse; the tool test covers direct-child termination only.
+- Existing model cancellation tests cover cancelled completion, history rollback, and session reuse; the tool test
+  covers direct-child termination only.
 - No source files were edited by the assistant.
 
 ### Validation
 
-- `./premerge.sh` exited 0: formatting, Python quality checks, Clippy with warnings denied, and all 67 Rust tests passed (0 failed).
+- `./premerge.sh` exited 0: formatting, Python quality checks, Clippy with warnings denied, and all 67 Rust tests passed
+  (0 failed).
 - `cargo build --locked` exited 0.
-- `uv run --project guides/acp/acp_test_suite guides/acp/acp_test_suite/test_handshake.py --report /tmp/acp-test-suite.json --executable target/debug/hobgoblin --acp` exited 0: 8/8 cases passed. Report: `/tmp/acp-test-suite.json`. This suite covers initialization and session creation, not cancellation or full ACP conformance.
+-
+`uv run --project guides/acp/acp_test_suite guides/acp/acp_test_suite/test_handshake.py --report /tmp/acp-test-suite.json --executable target/debug/hobgoblin --acp`
+exited 0: 8/8 cases passed. Report: `/tmp/acp-test-suite.json`. This suite covers initialization and session creation,
+not cancellation or full ACP conformance.
 - Zed cancellation smoke testing was not performed.
 
 ### Exact resume point and unverified work
 
-1. Task 7 remains in progress: review the requirement that cancellation must return `cancelled`, not a model error. `issue_prompt` currently uses unbiased `tokio::select!`; when both the cancellation receiver and model error are ready, the model branch can win. Existing tests block the model rather than exercising simultaneous readiness. Decide cancellation precedence and add a deterministic regression test before marking complete.
-2. Direct-child-only termination, overlapping-prompt policy, and PID-test hardening remain the previously recorded limitations. Early registration can replace an existing sender when prompts overlap; this is outside the idle-session startup regression's scope.
-3. Task 6b's separate structural and behavior-preservation acceptance review remains outstanding; passing premerge and the black-box suite does not alone complete it.
+1. Task 7 remains in progress: review the requirement that cancellation must return `cancelled`, not a model error.
+   `issue_prompt` currently uses unbiased `tokio::select!`; when both the cancellation receiver and model error are
+   ready, the model branch can win. Existing tests block the model rather than exercising simultaneous readiness. Decide
+   cancellation precedence and add a deterministic regression test before marking complete.
+2. Direct-child-only termination, overlapping-prompt policy, and PID-test hardening remain the previously recorded
+   limitations. Early registration can replace an existing sender when prompts overlap; this is outside the idle-session
+   startup regression's scope.
+3. Task 6b's separate structural and behavior-preservation acceptance review remains outstanding; passing premerge and
+   the black-box suite does not alone complete it.
 
 ## Session checkpoint — 2026-11-18 (Task 7 complete)
 
 ### Current understanding
 
 - A oneshot sender is consumed by `send`; its receiver retains the sent signal even before being polled.
-- Unbiased `select!` randomizes polling order. With `biased;` and cancellation first, an already-ready cancellation wins over a ready model result (success or error). This does not retroactively cancel a turn that already completed.
-- The learner checked the precedence regression with biased model-first ordering (fails), then biased cancellation-first ordering (passes). Unlike removing `biased;`, reversing the biased order provides a controlled negative check.
+- Unbiased `select!` randomizes polling order. With `biased;` and cancellation first, an already-ready cancellation wins
+  over a ready model result (success or error). This does not retroactively cancel a turn that already completed.
+- The learner checked the precedence regression with biased model-first ordering (fails), then biased cancellation-first
+  ordering (passes). Unlike removing `biased;`, reversing the biased order provides a controlled negative check.
 
 ### Source and acceptance checkpoint
 
 - `issue_prompt` uses `biased;` with the cancellation branch first.
-- `issue_prompt_favors_cancellation_in_race_tie` supplies a pre-signalled receiver and immediately failing scripted model, asserts the handler succeeds, and checks the original request's JSON-RPC `cancelled` response with no error.
-- Required automated Task 7 behavior is covered: model cancellation; direct-child tool termination; silent idle/unknown cancellation; history rollback and session reuse; registration before task execution; cancellation/error precedence. Current output sends the normal update before completion; cancellation emits only its completion response.
-- Task 7 is complete for the agreed single-active-turn, direct-child scope. Overlapping-prompt policy, process-group/descendant termination, and PID-test hardening remain deferred. Task 6b's independent acceptance review is not marked complete by this checkpoint.
+- `issue_prompt_favors_cancellation_in_race_tie` supplies a pre-signalled receiver and immediately failing scripted
+  model, asserts the handler succeeds, and checks the original request's JSON-RPC `cancelled` response with no error.
+- Required automated Task 7 behavior is covered: model cancellation; direct-child tool termination; silent idle/unknown
+  cancellation; history rollback and session reuse; registration before task execution; cancellation/error precedence.
+  Current output sends the normal update before completion; cancellation emits only its completion response.
+- Task 7 is complete for the agreed single-active-turn, direct-child scope. Overlapping-prompt policy,
+  process-group/descendant termination, and PID-test hardening remain deferred. Task 6b's independent acceptance review
+  is not marked complete by this checkpoint.
 
 ### Final validation
 
 - `./premerge.sh` exited 0: formatting, Python checks, Clippy with warnings denied, and all 68 Rust tests passed.
 - `cargo build --locked` exited 0.
-- External ACP command from the preceding checkpoint exited 0 again; report `/tmp/acp-test-suite.json` covers the 8 initialization/session-creation cases, not cancellation or full conformance.
-- Zed cancellation smoke test subsequently passed (user-confirmed): requested a 60-second timer, pressed Stop while the turn was running, then asked “What was my question?” in the same session. The follow-up received a response without knowledge of the cancelled prompt, consistent with full-turn history rollback and session reuse. The screenshot/user report does not independently establish process termination; the automated direct-child test covers that guarantee.
+- External ACP command from the preceding checkpoint exited 0 again; report `/tmp/acp-test-suite.json` covers the 8
+  initialization/session-creation cases, not cancellation or full conformance.
+- Zed cancellation smoke test subsequently passed (user-confirmed): requested a 60-second timer, pressed Stop while the
+  turn was running, then asked “What was my question?” in the same session. The follow-up received a response without
+  knowledge of the cancelled prompt, consistent with full-turn history rollback and session reuse. The screenshot/user
+  report does not independently establish process termination; the automated direct-child test covers that guarantee.
 - No Rust source was edited by the assistant.
 
 ### Exact resume point
 
-- Task 7 implementation, automated verification, and the user-confirmed Zed cancellation/session-reuse smoke test are complete.
-- Before starting Task 8, reconcile the outstanding Task 6b acceptance items; then review `08-turn-events.md` against the current source, raising decisions incrementally.
+- Task 7 implementation, automated verification, and the user-confirmed Zed cancellation/session-reuse smoke test are
+  complete.
+- Before starting Task 8, reconcile the outstanding Task 6b acceptance items; then review `08-turn-events.md` against
+  the current source, raising decisions incrementally.
 
 ## Session checkpoint — 2026-11-20 (Task 8 started)
 
 - The learner explicitly chose to move on to Task 8. Do not require Task 6b acceptance reconciliation before continuing.
 - Task 6b's outstanding acceptance items remain deferred and unverified, not marked complete.
-- Exact resume point: review the Task 8 turn-events draft against the current core and ACP prompt path, then discuss the first core-event design decision. Raise subsequent decisions only when needed.
+- Exact resume point: review the Task 8 turn-events draft against the current core and ACP prompt path, then discuss the
+  first core-event design decision. Raise subsequent decisions only when needed.
 - No source changes or new validation runs at this checkpoint.
 
 ## Session checkpoint — 2026-11-20 (Task 8 assistant-text sink)
 
 ### Current understanding
 
-- `emit(&mut self, ...)` gives a sink exclusive access to its state; shared references can still support internal mutation, as with channel senders.
+- `emit(&mut self, ...)` gives a sink exclusive access to its state; shared references can still support internal
+  mutation, as with channel senders.
 - `select!` branches take `pattern = future => handler`; an async block can own local state while awaiting a turn.
-- `EventSinkError::DeliveryFailed` identifies event delivery failure independently of ACP's `RequestError`. `Display` returns the result of `write!`; an empty `Error` implementation uses default methods. `?` propagates errors where a conversion exists.
-- Once the core emits assistant text through the ACP sink, the old post-turn notification must be removed to avoid duplicate text and shifted response ordering.
+- `EventSinkError::DeliveryFailed` identifies event delivery failure independently of ACP's `RequestError`. `Display`
+  returns the result of `write!`; an empty `Error` implementation uses default methods. `?` propagates errors where a
+  conversion exists.
+- Once the core emits assistant text through the ACP sink, the old post-turn notification must be removed to avoid
+  duplicate text and shifted response ordering.
 
 ### Source and validation checkpoint
 
-- Core event types, generic sink input to `turn`, no-op terminal sinks, and a collecting test sink are implemented. The text-event test checks final-answer emission.
-- ACP sink translates assistant text into notifications through the existing writer channel and maps send failure to `DeliveryFailed`. Other events are intentionally ignored for now.
-- `issue_prompt` constructs its sink locally; no sink dependency needs threading through the dispatch/handler signatures. The returned string remains for terminal compatibility.
-- After removing duplicate post-turn text delivery, `cargo test --locked` exited 0: all 68 tests passed. No report file generated. Full premerge and Zed smoke testing were not run for this increment.
+- Core event types, generic sink input to `turn`, no-op terminal sinks, and a collecting test sink are implemented. The
+  text-event test checks final-answer emission.
+- ACP sink translates assistant text into notifications through the existing writer channel and maps send failure to
+  `DeliveryFailed`. Other events are intentionally ignored for now.
+- `issue_prompt` constructs its sink locally; no sink dependency needs threading through the dispatch/handler
+  signatures. The returned string remains for terminal compatibility.
+- After removing duplicate post-turn text delivery, `cargo test --locked` exited 0: all 68 tests passed. No report file
+  generated. Full premerge and Zed smoke testing were not run for this increment.
 - No Rust source was edited by the assistant.
 
 ### Exact resume point and unverified work
 
-- Next, inspect the text emission location in `turn`: the last inspected version emitted only inside the no-tool-call branch. Extend emission to text accompanying tool calls, with focused scripted-model coverage; preserve one final-answer event.
-- Tool lifecycle emission and ACP mapping remain unfinished. Delivery-failure coverage and Task 8 ordering/cancellation acceptance remain to be completed.
+- Next, inspect the text emission location in `turn`: the last inspected version emitted only inside the no-tool-call
+  branch. Extend emission to text accompanying tool calls, with focused scripted-model coverage; preserve one
+  final-answer event.
+- Tool lifecycle emission and ACP mapping remain unfinished. Delivery-failure coverage and Task 8 ordering/cancellation
+  acceptance remain to be completed.
 - Task 6b acceptance remains deferred by explicit learner direction, not a prerequisite for Task 8.
 
 ## Validation record
@@ -1273,4 +1720,5 @@ Tests passed: 60
 Checker report path: none
 ```
 
-Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted sensitive paths.
+Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted
+sensitive paths.

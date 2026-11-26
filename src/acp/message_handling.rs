@@ -6,7 +6,9 @@ use tokio::sync::{
     oneshot::{self, Receiver},
 };
 
-use crate::tools::get_tools;
+use crate::agent::AgentEvent::{ToolRequested, ToolUpdate};
+use crate::agent::{ReplyContent, ToolCallStatus};
+use crate::tools::{ToolKind, get_tools};
 use crate::{
     acp::{
         ConnectionState, Request,
@@ -31,14 +33,54 @@ impl AgentEventSink for AcpEventSink {
     async fn emit(&mut self, event: agent::AgentEvent) -> Result<(), EventSinkError> {
         use crate::agent::AgentEvent::AssistantText;
 
-        if let AssistantText { message } = event {
-            let session_update =
-                build_agent_message_chunk(&self.session_id.0.to_string(), &message);
+        match event {
+            AssistantText { message } => {
+                let session_update =
+                    build_agent_message_chunk(&self.session_id.0.to_string(), &message);
 
-            self.sender
-                .send(session_update)
-                .await
-                .map_err(|_| EventSinkError::DeliveryFailed)?;
+                self.sender
+                    .send(session_update)
+                    .await
+                    .map_err(|_| EventSinkError::DeliveryFailed)?;
+            }
+
+            ToolRequested {
+                tool_call_id,
+                title,
+                name,
+                kind,
+                arguments: _,
+            } => {
+                let notification = build_tool_requested_notification(
+                    &self.session_id.0.to_string(),
+                    &tool_call_id,
+                    &title,
+                    &name,
+                    kind,
+                );
+
+                self.sender
+                    .send(notification)
+                    .await
+                    .map_err(|_| EventSinkError::DeliveryFailed)?;
+            }
+            ToolUpdate {
+                tool_call_id,
+                status,
+                content,
+            } => {
+                let notification = build_tool_update(
+                    &self.session_id.0.to_string(),
+                    &tool_call_id,
+                    &status,
+                    &content,
+                );
+
+                self.sender
+                    .send(notification)
+                    .await
+                    .map_err(|_| EventSinkError::DeliveryFailed)?;
+            }
         }
         Ok(())
     }
@@ -58,6 +100,51 @@ pub fn build_agent_message_chunk(session_id: &str, update: &str) -> Value {
                 "sessionUpdate": "agent_message_chunk",
             }
         }
+    })
+}
+
+pub fn build_tool_requested_notification(
+    session_id: &str,
+    call_id: &str,
+    title: &str,
+    name: &str,
+    kind: ToolKind,
+) -> Value {
+    serde_json::json!({
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": session_id,
+        "update": {
+          "sessionUpdate": "tool_call",
+          "toolCallId": call_id,
+          "title": title,
+          "name": name,
+          "kind": kind,
+          "status": "pending"
+        }
+      }
+    })
+}
+
+pub fn build_tool_update(
+    session_id: &str,
+    call_id: &str,
+    status: &ToolCallStatus,
+    content: &[ReplyContent],
+) -> Value {
+    serde_json::json!({
+      "jsonrpc": "2.0",
+      "method": "session/update",
+      "params": {
+        "sessionId": session_id,
+        "update": {
+          "sessionUpdate": "tool_call_update",
+          "toolCallId": call_id,
+          "status": status,
+          "content": content
+        }
+      }
     })
 }
 
