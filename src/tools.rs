@@ -6,6 +6,7 @@ use std::{
 };
 
 mod bash_tool;
+#[cfg(test)]
 pub(crate) mod fail_tool;
 pub(crate) mod read_tool;
 mod write_tool;

@@ -30,10 +30,7 @@ been retired.
 | [6 — Prompt turn](06-session-prompt.md)                  | complete | Run a model turn and report its answer over ACP without blocking the reader                                 | All 60 tests and premerge checks pass; duplex coverage proves ordering and responsiveness; multi-turn Zed smoke test succeeded                                                                                                                                                                                                                                                              |
 | [6b — Cleanup](06b-cleanup.md)                           | paused   | Split `acp.rs`, make `dispatch` delegate, type request errors, and refactor tests without changing behavior | Step 1 implementation complete under revised scope; shared test client deferred. Module split and handler extraction progressed; Step 3 typed request errors and spawned-turn error responses implemented in large part. 64 Rust tests pass on 2026-11-16. Step 3 behavior-preservation checks and full cleanup acceptance remain outstanding; see latest checkpoint.                       |
 | [7 — Cancellation](07-cancellation.md)                   | complete | Cancel a running prompt without reporting an error and leave the session reusable                           | All 68 Rust tests, premerge, build, and 8/8 external ACP cases pass on 2026-11-18. Coverage includes model cancellation, rollback/reuse, idle/unknown sessions, early sender registration, cancellation precedence over a ready model error, and direct-child tool termination. User-confirmed Zed cancellation/session-reuse smoke test also passed. Scope limitations are recorded below. |
-
-| [8 — Turn events](08-turn-events.md) | in progress | Report assistant replies and tool progress during a turn |
-Started 2026-11-20 at the learner's explicit direction; guide/source review is next. Task 6b's outstanding acceptance
-review is deferred, not a prerequisite. |
+| [8 — Turn events](08-turn-events.md) | in progress | Report assistant replies and tool progress during a turn | Core text/tool lifecycle events and ACP forwarding implemented; user-confirmed tool-card display in Zed on 2026-11-25. All 73 Rust tests pass. Wire-format corrections, remaining acceptance coverage, and a clean premerge run are still needed; see latest checkpoint. Task 6b remains deferred. |
 
 Use `not started`, `in progress`, `paused`, `complete`, or `blocked`. Mark a task complete only when every listed
 command exits with status 0 and its required automated cases are present in the test/checker output.
@@ -1570,6 +1567,52 @@ not cancellation or full ACP conformance.
   acceptance remain to be completed.
 - Task 6b acceptance remains deferred by explicit learner direction, not a prerequisite for Task 8.
 
+## Session checkpoint — 2026-11-25 (Task 8 tool updates visible in Zed)
+
+### Current understanding and source checkpoint
+
+- Reviewed branch `add-event-sink` at `0967a25`, including the tool-trait refactor, lifecycle events, injected tool map,
+  and ACP forwarding added since the previous checkpoint. No Rust source was edited by the assistant.
+- `Tool` centralizes tool specification, title, kind, and execution. The injected tool map lets core tests substitute
+  a failing tool without depending on a real filesystem failure.
+- `agent::turn` now emits text accompanying tool calls as well as the final answer. Tool execution emits requested,
+  in-progress, and completed/failed events, with result content, before continuing the model conversation.
+- `AcpEventSink` maps all three core event variants into `session/update` notifications. Updates are awaited inline
+  through the same writer channel used for the final prompt response; no separate forwarding task was introduced.
+- Core tests check the five-event success/failure sequences, including intermediate text and final answer.
+  The duplex `prompt_cancellation_stops_tools` test now checks assistant text, tool request, and in-progress update
+  before the cancelled response, while retaining direct-child termination coverage.
+- The learner reports tool updates working in Zed. Their screenshot shows a `Write to test.txt` tool card and a final
+  response recalling the previous request. This is manual UI smoke-test evidence, not proof of every lifecycle status
+  or result-content rendering. `run-acp.sh` and `test.txt` were untracked at review time and were left untouched.
+
+### Validation and review findings
+
+- `cargo test --locked`: exit 0; 73 passed, 0 failed, including terminal frontend tests.
+- `./premerge.sh`: exit 101. Rust formatting and Python Ruff checks passed; Clippy stopped on dead-code errors for
+  `FailTool` and `FailArgs` in the normal binary build, and a needless borrow at `src/agent.rs:257`. Premerge did not
+  reach its test step; the 73-test result above comes from the separate command.
+- Wire-format mismatch confirmed against the [ACP tool-call reference](https://agentclientprotocol.com/protocol/v1/tool-calls):
+  derived serialization currently emits kinds such as `Read`, statuses such as `InProgress`, and content shaped as
+  `{"TextContent":{"text":"..."}}`. ACP expects `read`, `in_progress`, and tool content shaped as
+  `{"type":"content","content":{"type":"text","text":"..."}}` (likewise lowercase completed/failed).
+  Existing duplex helpers compare against the same enum serialization, so passing tests do not establish protocol correctness.
+- Session-wide tool-call ID uniqueness is not yet established: core events reuse provider IDs without a session-level
+  uniqueness check. Keep this required behavior open rather than inferring it from a one-tool test.
+
+### Exact resume point
+
+- Next target: ACP tool notification serialization in `src/acp/message_handling.rs`. Before changing code, write a
+  focused test of the builders against literal ACP JSON, not `serde_json::to_value` of the implementation enums.
+  Inputs: a known tool ID, kind/status, and text result. Output: the documented notification with lowercase kind/status
+  and wrapped text content. The initial test should expose the mismatch; rerun it after the learner's correction.
+- After that increment, add a successful-tool duplex sequence test through the final prompt response, asserting literal
+  wire values, matching IDs, result content, and no duplicate final answer. Core event tests alone do not cover this boundary.
+- Remaining follow-ups: session-wide ID uniqueness coverage, event-delivery failure coverage, and the Clippy findings
+  above. Rerun `cargo test --locked` and `./premerge.sh` after corrections; recheck tool status/result rendering in Zed.
+- No external ACP subprocess suite, fresh binary build, or recorded portfolio demo was performed during this review.
+  Task 8 remains in progress. Task 6b acceptance remains deferred, not a prerequisite.
+
 ## Validation record
 
 Add one structured entry after validation:
@@ -1718,6 +1761,18 @@ Exit statuses: 0
 Tests run: 60
 Tests passed: 60
 Checker report path: none
+```
+
+```text
+Date: 2026-11-25
+Task: 8 — Turn events (tool-update checkpoint)
+Commit or tree state: add-event-sink at 0967a25; run-acp.sh and test.txt untracked; documentation-only review update
+Commands: cargo test --locked; ./premerge.sh
+Exit statuses: 0; 101
+Tests run: 73 (standalone cargo test; premerge stopped at Clippy)
+Tests passed: 73
+Checker report path: none
+Manual evidence: learner-reported Zed tool updates and supplied screenshot showing a Write tool card
 ```
 
 Do not use prose explanations as completion evidence. Do not record credentials, complete model payloads, or unredacted

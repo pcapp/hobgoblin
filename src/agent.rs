@@ -254,7 +254,7 @@ where
 
             let () = sink.emit(update_event).await?;
 
-            let result = execute_tool_call(tool_call, &tools).await;
+            let result = execute_tool_call(tool_call, tools).await;
 
             if let Some(error) = result["error"].as_str() {
                 eprintln!("Tool call error: {}", error);
